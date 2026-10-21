@@ -1,9 +1,7 @@
 """Data fetcher module for pulling historical and real-time market data."""
 
-from datetime import datetime, timedelta
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 import yfinance as yf
 
@@ -54,50 +52,28 @@ class DataFetcher:
         """
         interval = interval or self.interval
 
-        if lookback_days is None:
-            lookback_days = Config.DEFAULT_LOOKBACK_DAYS
+        # Gate G2 seam (design §4.6): route the historical read through the ONE
+        # unified MarketDataService instead of calling yfinance directly. The
+        # service owns ticker resolution, window normalization (§4.4c, EXCLUSIVE
+        # end), the Redis/Postgres read-cache, and the yfinance leg — reproducing
+        # this method's former period-vs-start/end branch and OHLCV post-processing
+        # byte-for-byte, so the return contract (OHLCV-only float64, tz-naive
+        # Datetime-named index) is unchanged. ``fetch_latest`` is NOT re-pointed.
+        from datetime import date as _date
 
-        # Enforce yfinance intraday constraint: max 60 days for sub-daily intervals
-        if Config.is_intraday(interval):
-            max_days = Config.INTRADAY_MAX_LOOKBACK_DAYS
-            if lookback_days > max_days:
-                lookback_days = max_days
+        from backend.app.services.data_service import MarketDataService
 
-        if end_date is None:
-            end_date = datetime.now().strftime("%Y-%m-%d")
+        start = _date.fromisoformat(start_date) if start_date else None
+        end = _date.fromisoformat(end_date) if end_date else None
 
-        if start_date is None:
-            start_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=lookback_days)
-            start_date = start_dt.strftime("%Y-%m-%d")
-
-        stock = yf.Ticker(self.ticker)
-
-        # For intraday intervals, yfinance requires 'period' instead of start/end
-        # when going beyond ~7 days. Use period-based fetch for reliability.
-        if Config.is_intraday(interval):
-            period_str = f"{lookback_days}d"
-            df = stock.history(period=period_str, interval=interval)
-        else:
-            df = stock.history(start=start_date, end=end_date, interval=interval)
-
-        if df.empty:
-            raise ValueError(
-                f"No data returned for {self.ticker} ({self.display_ticker}, "
-                f"asset_class={self.asset_class}, interval={interval}, lookback={lookback_days}d). "
-                f"Verify the ticker is valid for this asset class."
-            )
-
-        # Standardize: keep only OHLCV
-        df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
-
-        # Remove timezone but preserve full datetime for intraday
-        if df.index.tz is not None:
-            df.index = df.index.tz_localize(None)
-
-        # Name index appropriately
-        df.index.name = "Datetime"
-
-        return df
+        return MarketDataService().get_ohlcv_sync(
+            ticker=self.display_ticker,
+            interval=interval,
+            start=start,
+            end=end,
+            lookback_days=lookback_days,
+            asset_class=self.asset_class,
+        )
 
     def fetch_latest(self, period: str = None, interval: str = None) -> pd.DataFrame:
         """

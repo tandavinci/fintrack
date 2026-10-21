@@ -10,6 +10,12 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/bse_tracker",
         description="Async PostgreSQL connection URL",
     )
+    # Optional explicit sync URL (psycopg2). When unset, the shared sync engine
+    # in database.py derives it from database_url (asyncpg -> psycopg2 swap).
+    database_url_sync: str | None = Field(
+        default=None,
+        description="Sync PostgreSQL connection URL (psycopg2). Derived from database_url when None.",
+    )
 
     # Redis
     redis_url: str = Field(
@@ -43,6 +49,17 @@ class Settings(BaseSettings):
     smtp_password: str = Field(default="")
     smtp_from_email: str = Field(default="noreply@bsetracker.com")
     smtp_use_tls: bool = Field(default=True)
+
+    # News ingest (FEAT B — placeholders registered here so the shell loads;
+    # the ingest service/repository arrive in FEAT-003).
+    news_rss_feeds: list[str] = Field(
+        default=[],
+        description="Configurable list of market-news RSS feed URLs (FEAT B).",
+    )
+    news_bse_announcements_enabled: bool = Field(
+        default=False,
+        description="Feature flag for best-effort BSE announcements ingest (FEAT B).",
+    )
 
     # Application
     app_name: str = Field(default="BSE Stock Investment Tracker")

@@ -1,3 +1,7 @@
+# --- slice pins (AUTHORITATIVE; unchanged) ---
+# INVARIANT: no overlapping name below changes a slice pin. The Tracker-shell
+# versions further down are resolved against MONO/.venv at build time; only the
+# slice pins in this top block are fixed by the Step-2 design (§3.4).
 fastapi==0.115.*
 uvicorn==0.30.*
 pydantic>=2,<3
@@ -11,3 +15,21 @@ ta==0.11.0
 yfinance==0.2.40
 pytest==8.*
 pytest-asyncio==0.23.*
+# --- Tracker shell deps (Step 2; pinned, no overlap with the slice) ---
+sqlalchemy==2.0.*
+alembic==1.13.*
+asyncpg==0.29.*
+psycopg2-binary==2.9.*
+celery==5.3.*
+redis==5.0.*
+pytrends==4.9.*
+bsedata==0.6.*       # latest available on PyPI (design's representative 1.0.* does not exist; Tracker-only dep, not a slice pin)
+pytz==2024.*
+email-validator==2.*
+python-jose[cryptography]==3.3.*
+passlib[bcrypt]==1.7.*
+reportlab==4.*
+feedparser==6.0.*    # NEW in Step 2 (RSS ingest, FEAT B)
+# --- test-only ---
+hypothesis==6.*
+factory-boy==3.3.*

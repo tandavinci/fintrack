@@ -9,10 +9,17 @@ requires-python = ">=3.12"
 # Runtime pins live in requirements.txt (reproducible installs); keep this empty.
 dependencies = []
 
-[tool.setuptools]
-# Explicit list avoids scanning third_party/ (submodule) and frontend/.
-packages = ["backend", "quant", "deep", "gateway"]
+[tool.setuptools.packages.find]
+# Automatic discovery scoped to the four source roots (design §3.5). Pulls in
+# backend, backend.app, backend.app.{schemas,models,services,...} automatically
+# while keeping the read-only submodule and the JS frontend out.
+where = ["."]
+include = ["backend*", "quant*", "deep*", "gateway*"]
+exclude = ["third_party*", "frontend*", "tests*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: tests that require the data stack (Postgres/Redis) or network; skipped-with-reason when infra is unreachable",
+]

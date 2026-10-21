@@ -17,12 +17,15 @@ STOCK_PRICE_TTL = 60          # Stock prices: 60 seconds
 SEARCH_RESULTS_TTL = 300      # Search results: 5 minutes
 DASHBOARD_TTL = 60            # Dashboard data: 60 seconds
 TREND_SCORE_TTL = 86400       # Trend scores: 24 hours
+OHLCV_INTRADAY_TTL = 300      # OHLCV intraday bars: 5 minutes (churn intra-session)
+OHLCV_DAILY_TTL = 86400       # OHLCV daily bars: 24 hours (stable once closed)
 
 # Cache key prefixes
 PREFIX_STOCK_PRICE = "stock:price:"
 PREFIX_SEARCH = "stock:search:"
 PREFIX_DASHBOARD = "dashboard:"
 PREFIX_TREND = "stock:trend:"
+PREFIX_OHLCV = "ohlcv:"       # ohlcv:{resolved_symbol}:{interval}:{start_norm}:{end_norm}
 
 # Redis connection pool (initialized lazily)
 _redis_pool: redis.Redis | None = None
@@ -104,6 +107,57 @@ async def cache_delete_pattern(pattern: str) -> None:
             await client.delete(*keys)
         if cursor == 0:
             break
+
+
+# --- OHLCV frame (de)serialization (design §4.5, byte-faithful, G2) ---
+#
+# The frame cells are numpy float64 scalars which json.dumps cannot serialize
+# directly. We cast each cell np.float64 -> Python float FIRST (lossless: both
+# are IEEE-754 binary64), so json.dumps emits the shortest round-tripping decimal
+# and json.loads reconstructs the identical double. No round()/reduced-precision
+# step is ever reached — a lossy round would break §4.4b and is forbidden here.
+
+_OHLCV_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
+
+
+def serialize_ohlcv(df) -> str:
+    """Serialize an OHLCV DataFrame to a JSON string (byte-faithful float64).
+
+    Produces JSON records: a tz-naive ISO timestamp per row plus OHLCV as JSON
+    numbers that are the EXACT IEEE-754 doubles of the frame's float64 cells.
+    """
+    import pandas as pd  # local import keeps cache.py importable without pandas
+
+    records = []
+    for ts, row in df.iterrows():
+        rec = {"ts": pd.Timestamp(ts).isoformat()}
+        for col in _OHLCV_COLUMNS:
+            if col in df.columns:
+                rec[col] = float(row[col])  # np.float64 -> Python float (lossless)
+        records.append(rec)
+    return json.dumps(records)
+
+
+def deserialize_ohlcv(payload: str):
+    """Deserialize a JSON string back to the EXACT float64 OHLCV frame.
+
+    Returns a DataFrame with a tz-naive DatetimeIndex named ``Datetime`` and the
+    columns present in the payload, cast to float64. ``float(repr(x)) == x`` so
+    the round-trip is bit-identical to the frame that was cached.
+    """
+    import pandas as pd
+
+    records = json.loads(payload)
+    if not records:
+        df = pd.DataFrame(columns=_OHLCV_COLUMNS, dtype="float64")
+        df.index = pd.DatetimeIndex([], name="Datetime")
+        return df
+
+    index = pd.DatetimeIndex([pd.Timestamp(r["ts"]) for r in records], name="Datetime")
+    cols = [c for c in _OHLCV_COLUMNS if c in records[0]]
+    data = {c: [r[c] for r in records] for c in cols}
+    df = pd.DataFrame(data, index=index)
+    return df.astype("float64")
 
 
 # --- Domain-specific cache operations ---
