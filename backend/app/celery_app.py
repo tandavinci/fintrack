@@ -1,0 +1,114 @@
+"""Celery application configuration with Redis broker and Beat scheduler.
+
+Configures background task scheduling for:
+- Price updates: every 60s during market hours (9:15 AM - 3:30 PM IST, Mon-Fri)
+- Trend refresh: every 24 hours
+- Alert evaluation: every 60 seconds
+- Insight recalculation: daily post-market (after 3:30 PM IST)
+- Weekly cleanup: once per week
+"""
+
+from celery import Celery
+from celery.schedules import crontab
+
+from backend.app.config import settings
+
+# Create Celery instance with Redis as broker and result backend
+celery_app = Celery(
+    "bse_tracker",
+    broker=settings.redis_url,
+    backend=settings.redis_url,
+)
+
+# Celery configuration
+celery_app.conf.update(
+    # Serialization
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    # Timezone (IST for market hour scheduling)
+    timezone="Asia/Kolkata",
+    enable_utc=True,
+    # Task execution settings
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    worker_prefetch_multiplier=1,
+    # Result settings
+    result_expires=3600,  # Results expire after 1 hour
+    # Task discovery
+    imports=[
+        "app.tasks.price_updater",
+        "app.tasks.trend_fetcher",
+        "app.tasks.alert_monitor",
+        "app.tasks.insight_calculator",
+        "app.tasks.email_tasks",
+    ],
+)
+
+# Celery Beat schedule
+celery_app.conf.beat_schedule = {
+    # Price updates: every 60 seconds during market hours
+    # Market hours: 9:15 AM - 3:30 PM IST, Monday-Friday
+    "update-stock-prices": {
+        "task": "app.tasks.price_updater.update_stock_prices",
+        "schedule": 60.0,  # Every 60 seconds
+        "options": {
+            "expires": 55,  # Expire if not picked up within 55 seconds
+        },
+    },
+    # Trend refresh: once every 24 hours (at 6:00 AM IST before market opens)
+    "refresh-trend-scores": {
+        "task": "app.tasks.trend_fetcher.refresh_trend_scores",
+        "schedule": crontab(hour=6, minute=0),
+        "options": {
+            "expires": 3600,
+        },
+    },
+    # Alert evaluation: every 60 seconds
+    "evaluate-all-alerts": {
+        "task": "app.tasks.alert_monitor.evaluate_all_alerts",
+        "schedule": 60.0,  # Every 60 seconds
+        "options": {
+            "expires": 55,
+        },
+    },
+    # Insight recalculation: daily post-market (4:00 PM IST, after 3:30 PM close)
+    "recalculate-insights": {
+        "task": "app.tasks.insight_calculator.recalculate_insights",
+        "schedule": crontab(hour=16, minute=0, day_of_week="mon-fri"),
+        "options": {
+            "expires": 3600,
+        },
+    },
+    # Weekly cleanup: every Sunday at 2:00 AM IST
+    "weekly-cleanup": {
+        "task": "app.tasks.insight_calculator.cleanup_stale_data",
+        "schedule": crontab(hour=2, minute=0, day_of_week="sunday"),
+        "options": {
+            "expires": 7200,
+        },
+    },
+}
+
+
+def is_market_hours() -> bool:
+    """Check if the current time is within BSE market hours.
+
+    Market hours: 9:15 AM - 3:30 PM IST, Monday through Friday.
+    Returns True if within market hours, False otherwise.
+    """
+    from datetime import datetime
+
+    import pytz
+
+    ist = pytz.timezone("Asia/Kolkata")
+    now = ist.localize(datetime.now()) if datetime.now().tzinfo is None else datetime.now().astimezone(ist)
+
+    # Check weekday (Monday=0, Sunday=6)
+    if now.weekday() >= 5:  # Saturday or Sunday
+        return False
+
+    market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+
+    return market_open <= now <= market_close
