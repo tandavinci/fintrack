@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Data / caches (keep golden set CSVs tracked explicitly if desired)
+*.log
+.DS_Store
+
+# OS / editor
+Thumbs.db
+.idea/
+
+# Agent workflow artifacts (FEAT task files, reviewer verdicts) — never committed
+.agents/
+gateway/logs/

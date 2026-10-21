@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-trading-intel"
+version = "0.0.0"
+requires-python = ">=3.12"
+# Runtime pins live in requirements.txt (reproducible installs); keep this empty.
+dependencies = []
+
+[tool.setuptools]
+# Explicit list avoids scanning third_party/ (submodule) and frontend/.
+packages = ["backend", "quant", "deep", "gateway"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,30 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": 1,
+      "severity": "MEDIUM",
+      "area": "deep number-check / allowable set",
+      "where": "section 4.2 step 2 vs 4.2(a)",
+      "problem": "The deep prompt is built from 'indicator summary, recent bars, regime, and portfolio context', but the number-check allowable set only includes summarize() leaves + last 60 raw OHLCV + regime.confidence + portfolio. The real RegimeAgent.reasoning/indicators_used contain figures not in summarize (net_change_pct, atr_pct as %-of-price, rsi_avg, price_range_pct, avg_volume_ratio, sma20_slope_pct). A model faithfully echoing a regime figure it was given will fail the number-check and raise NumberCheckError on a correct citation, failing real reports and inflating the Gate G4 failure rate with false positives.",
+      "fix": "Either extend 4.2(a) to also recursively collect numeric leaves of regime.indicators_used into the allowable set, or stop passing regime.reasoning/indicators_used into the prompt (pass only the regime label + regime.confidence). State which; if keeping regime context, add 'allowable += numeric_leaves(regime.indicators_used)'."
+    },
+    {
+      "id": 2,
+      "severity": "MEDIUM",
+      "area": "quant live-path lookback vs 60-bar snapshot window",
+      "where": "section 3.5 live call + 8.1 (SNAPSHOT_TAIL_N=60) + 4.2(a)",
+      "problem": "The only concrete live call passes no lookback_days, so fetch_historical defaults to Config.DEFAULT_LOOKBACK_DAYS=120 calendar days (~82 trading days). After dropna on SMA_50 (50-bar warmup) only ~30 daily rows remain, so df.tail(60) returns ~30 rows on the live path. The snapshot_id and the number-check allowable set are designed and tested around a 60-bar window; the live path silently delivers about half. Offline tests mask this because they inject a synthetic df with >=60 warmed bars.",
+      "fix": "Pass an explicit lookback on the live call so >= SNAPSHOT_TAIL_N bars survive dropna, e.g. get_enriched_data(end_date=as_of.isoformat(), interval='1d', lookback_days=200, use_cache=False), and state the minimum-bar invariant (len(df) >= SNAPSHOT_TAIL_N) or document the short-history fallback explicitly."
+    },
+    {
+      "id": 3,
+      "severity": "NIT",
+      "area": "quant LLM-mode rewire completeness",
+      "where": "section 3.4",
+      "problem": "3.4 says to delete the openai method and reroute the ollama method, and that llm_provider becomes rule_based/gateway with use_llm=True routing to gateway, but it does not call out that StrategyAgent.__init__'s provider resolution ('elif use_llm and Config.OPENAI_API_KEY: openai') and predict()'s dispatch on 'openai'/'ollama' must also be rewritten. Deleting the two methods without editing the dispatch leaves dangling routes.",
+      "fix": "Add to 3.4: __init__ resolves self.llm_provider = llm_provider or ('gateway' if use_llm else Config.DEFAULT_LLM_PROVIDER); predict() dispatches 'gateway' to the new gateway method else rule-based; remove the OPENAI_API_KEY branch."
+    }
+  ],
+  "reviewDoc": "c:\\GIT\\Fintech\\repo\\docs\\decisions\\slice-design-review.md"
+}
