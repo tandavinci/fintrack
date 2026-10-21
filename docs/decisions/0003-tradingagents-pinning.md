@@ -8,14 +8,18 @@ Gate: Step 0
 
 TradingAgents (LangGraph multi-agent trading team) is the `deep/` engine source. It is NOT present in the workspace — `c:\GIT\Fintech\agents` is Polymarket Agents, a different project. Rule 2: never edit TradingAgents source; change behaviour only through config and the `deep/` adapter.
 
-## Decision (proposed)
+## Decision (accepted)
 
-Add `TauricResearch/TradingAgents` as a git submodule at `third_party/TradingAgents`, pinned to an exact release tag or commit SHA (not a moving branch). Upgrades happen only after the scorecard + golden-set backtest pass (§8 monthly cadence, §10 stop/pivot rule).
+Added `TauricResearch/TradingAgents` as a git submodule at `third_party/TradingAgents`, pinned to an exact release tag resolved to a commit SHA (not a moving branch). Upgrades happen only after the scorecard + golden-set backtest pass (§8 monthly cadence, §10 stop/pivot rule).
 
-## Open items (need user input)
+### Resolved pin (Step 0 / FEAT-001)
 
-- Confirm the upstream is `https://github.com/TauricResearch/TradingAgents` (the widely used one), or provide the fork/URL you intend to use.
-- Choose the pin: latest stable release tag vs a specific SHA. Record the exact SHA here once added.
+- Upstream: `https://github.com/TauricResearch/TradingAgents`
+- Pin: latest stable release tag `v0.7.0`
+- Resolved SHA: `e8f5503e9b86d5c2710b0c76b1f686703968c9df`
+- Submodule is checked out detached at this SHA; `git describe --tags` reports `v0.7.0`.
+
+To re-pin later, `git -C third_party/TradingAgents fetch --tags`, checkout the new tag, then commit the updated submodule pointer with a `step-0:`-style message.
 
 ## Consequences
 
