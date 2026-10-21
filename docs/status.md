@@ -2,6 +2,53 @@
 
 Format per STEERING §11. Newest week on top.
 
+## Week 2 (2026-10-21) — Unified slice complete (FEAT-001 … FEAT-005)
+
+Current step / gate: Slice done; Gate G1 (structured-output validity) passed.
+
+Built across all FEATs:
+- FEAT-001 — local LLM gateway: server-free core (`gateway/client.py`) that is
+  the only component talking to Ollama and the single `num_ctx=8192`
+  enforcement point; `generate_sync` (/quick + /deep) with one-retry-then-
+  structured-error; a `threading` priority gate shared by the async FastAPI
+  routes and in-process callers; per-call JSONL logging; and the deterministic
+  hash-embedding fallback. Pinned TradingAgents submodule added
+  (`third_party/TradingAgents` @ `v0.7.0`, SHA
+  `e8f5503e9b86d5c2710b0c76b1f686703968c9df`).
+- FEAT-002 — shared contract: the ONE `Recommendation` schema plus the
+  contract-adjacent `snapshot.py` (`compute_snapshot_id`, `SNAPSHOT_TAIL_N=60`)
+  and `fusion.py` (`fuse` — keep both + conflict flag, never average).
+- FEAT-003 — quant core: migrated rule-based library (`quant/`) with
+  `recommend(ticker, as_of, df=None)`, deterministic evidence, daily-bar guard.
+- FEAT-004 — deep adapter: `deep.analyze(...)` as a plain callable (no web
+  framework import), gateway `/deep` call under the shared schema, and the
+  sign-preserving number-check so no unchecked model figure escapes.
+- FEAT-005 — integration + stability tests and this wrap-up: integration test
+  (both lanes share one `snapshot_id`; `fuse` keep-both in both directions),
+  live gateway test, and the N=20 validity-rate gate.
+
+Measured results (from `gateway/logs/calls.jsonl`, this hardware — RTX 2050
+4 GB, `llama3.2` 3B, `num_ctx=8192`):
+- Structured-output validity rate: **20/20 = 1.000** on the dedicated
+  `SLICE_VALIDITY_N=20` harness (≥ 0.95 Gate G1 passes). Across all logged
+  schema-constrained `/deep` calls in the 3 stability runs: 105/105 = 1.000.
+- Gateway throughput: mean ≈ **4.5 tok/s**, peak ≈ 7.4 tok/s. Generations are
+  short (schema-constrained signal JSON + terse free-form replies), so the
+  per-call token counts are small; this is the measured steady state on the
+  4 GB-VRAM laptop and is consistent with the 8k-context decision in ADR 0004
+  (the 27 tok/s figure there was a warm single-ticker benchmark, not the mixed
+  short-call test traffic measured here).
+- Full-suite stability: three consecutive `pytest` runs each reported
+  **39 passed, 0 failed** — identical pass counts, zero flakiness.
+
+Blockers: none outstanding. TradingAgents is pinned and checked out (no
+documented-blocker was needed); the real LangGraph wiring remains a documented
+TODO seam in `deep/adapter.py` (config-only, STEERING rule 2) for a later step.
+
+Decision notes added: 0005 (hash-embedding fallback), 0006 (editable-install
+import wiring). Runbook now documents the ONE import line, the `pip install -e .`
+step, and the fresh-checkout order.
+
 ## Week 1 (2026-10-21)
 
 Current step / gate: Step 0 (Foundations) — scaffolding, pre-G0.
