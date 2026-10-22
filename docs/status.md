@@ -4,9 +4,10 @@ Format per STEERING §11. Newest week on top.
 
 ## Week 3 (2026-10-21) — Step 2 data unification (FEAT-001 … FEAT-005)
 
-Current step / gate: Step 2 built and committed; Gate G2 (identical bars +
-indicators across the three lanes) is IMPLEMENTED and passes in its offline,
-network-free form; the live-stack G2 run is pending (see open items).
+Current step / gate: Step 2 built, committed, reviewed (APPROVED), and pushed to
+`origin/main`. Gate G2 (identical bars + indicators across the three lanes) is
+IMPLEMENTED and CONFIRMED live: the real-stack run passed for all 10 golden
+tickers (see Measured results and `docs/reviews/step-2-integration-results.md`).
 
 Built across all FEATs:
 - FEAT-001 — relocated the full BSE Tracker backend shell into
@@ -45,30 +46,31 @@ Built across all FEATs:
   `origin/main`.
 
 Measured results:
-- Offline suite (no Postgres/Redis/network): **59 passed, 20 skipped**
-  — the 39 pre-existing slice tests stay green, plus the new offline unit,
-  loader, and data-service tests; the 20 skips are the integration tests and the
-  golden-loader tests skipping WITH REASON because no infra and no committed
-  parquet fixtures exist in this environment. Zero failures.
+- Offline suite (`.venv` python, `pytest -q`, no watch mode): **79 passed,
+  0 failed** as the pre-push gate — the 39 pre-existing slice tests stay green
+  plus the new offline unit, loader, data-service, and golden-loader tests;
+  integration tests skip-with-reason when infra is absent. (In the earlier
+  fixture-less environment this read 59 passed / 20 skipped; the 10 golden
+  parquet fixtures are now committed under `tests/golden/`, so the golden-loader
+  tests run instead of skipping.) Zero failures.
 - Gate G2 element-wise frame equality + equal `snapshot_id` across
-  tracker/quant/deep: the gate is written and holds under the offline,
-  patched-frame equality path; the LIVE measured result (per-ticker row counts,
-  the cold/DB/Redis `snapshot_id` equality at a trading-day `as_of`) is
-  **PENDING a live-stack run** — Docker was not reachable in the build/push
-  environment, so the stack could not be brought up, the 200-day `.BO` golden
-  bars could not be fetched through yfinance, and G2 could not be executed
-  against real bars. The parquet fixtures under `tests/golden/` are therefore not
-  yet committed. See the open items below; nothing in the code changes when the
-  run happens — only the saved parquet set and the recorded measurement.
+  tracker/quant/deep: **CONFIRMED live.** The real-stack run (Dockerized
+  pgvector Postgres + Redis + live yfinance) passed for all 10 golden tickers at
+  `as_of = 2024-01-15` — each ticker 270 `price_bars` rows → 85 enriched rows,
+  `frames_equal = yes`, and equal `compute_snapshot_id` across the cold /
+  Postgres / Redis paths. Full live integration suite: **17 passed, 0 failed**.
+  The 10 golden parquet fixtures are materialized and committed. Row counts and
+  per-ticker snapshot-id prefixes are recorded in
+  `docs/reviews/step-2-integration-results.md`.
 
 Open items (carried, not blockers to the Step-2 code landing):
-- **A8 — golden ticker list + live G2 run.** The 10-ticker `.BO` golden set in
-  `tests/golden/README.md` is still marked "NEEDS USER CONFIRMATION." On a
-  machine with Docker + reachable yfinance, bring up
-  `infra/docker-compose.yml`, run `alembic -c backend/alembic.ini upgrade head`
-  from the repo root, then `pytest -m integration` to materialize the parquet
-  goldens and execute the G2 gate live; record the measured row counts and
-  `snapshot_id` equality here.
+- **A8 — golden ticker list + live G2 run. RESOLVED.** The golden set is
+  confirmed as the 6 `.NS` + 4 `.BO` set (user-approved Option A after six `.BO`
+  symbols returned no yfinance data); `tests/golden/README.md` records the
+  rationale as CONFIRMED. The live G2 run was executed on a Docker-capable
+  machine with reachable yfinance: the parquet goldens are materialized and
+  committed and the G2 gate passed live (results above and in
+  `docs/reviews/step-2-integration-results.md`).
 - **A3 — `.BO` default for bare Indian symbols.** Resolution appends `.BO` to a
   bare stock symbol; US tickers passed bare would be mis-suffixed. A product
   decision, flagged in the design (§11 A3).
