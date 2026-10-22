@@ -30,6 +30,11 @@ python-jose[cryptography]==3.3.*
 passlib[bcrypt]==1.7.*
 reportlab==4.*
 feedparser==6.0.*    # NEW in Step 2 (RSS ingest, FEAT B)
+# --- golden-fixture I/O (Step 2 FEAT-004) ---
+# pyarrow backs pandas .to_parquet/.read_parquet so the golden fixtures preserve
+# float64 dtypes + the tz-naive DatetimeIndex losslessly (design §9.3; CSV would
+# re-introduce string-parse ambiguity that could perturb compute_snapshot_id).
+pyarrow==17.0.*
 # --- test-only ---
 hypothesis==6.*
 factory-boy==3.3.*
