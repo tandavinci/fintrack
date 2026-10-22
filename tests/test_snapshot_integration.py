@@ -32,7 +32,7 @@ from tests.integration_helpers import (  # noqa: F401
 
 pytestmark = pytest.mark.integration
 
-TICKER = "RELIANCE.BO"
+TICKER = "RELIANCE.NS"
 
 
 @pytest.fixture

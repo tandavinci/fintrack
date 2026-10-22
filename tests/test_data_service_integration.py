@@ -39,7 +39,7 @@ from tests.integration_helpers import (  # noqa: F401 (fixtures)
 
 pytestmark = pytest.mark.integration
 
-GOLDEN = "RELIANCE.BO"
+GOLDEN = "RELIANCE.NS"
 RESOLVED = resolve_market_ticker(GOLDEN)
 
 

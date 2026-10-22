@@ -23,14 +23,18 @@ from backend.app.models.price_bar import PriceBar
 
 # --- the golden set this FEAT materializes (tests/golden/README.md) ----------
 
+# Golden set (user decision, Option A): 6 symbols switched .BO -> .NS because
+# Yahoo's .BO coverage for them is dead (stable across retries) while every .NS
+# equivalent returns real data; the 4 live .BO symbols are kept so the set
+# exercises BOTH exchanges. See tests/golden/README.md for the full rationale.
 GOLDEN_TICKERS = [
-    "RELIANCE.BO",
+    "RELIANCE.NS",
     "TCS.BO",
-    "HDFCBANK.BO",
-    "INFY.BO",
-    "ICICIBANK.BO",
-    "CUMMINSIND.BO",
-    "PERSISTENT.BO",
+    "HDFCBANK.NS",
+    "INFY.NS",
+    "ICICIBANK.NS",
+    "CUMMINSIND.NS",
+    "PERSISTENT.NS",
     "MPHASIS.BO",
     "YESBANK.BO",
     "IDEA.BO",
