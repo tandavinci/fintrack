@@ -9,22 +9,26 @@ FinTrack brings together:
 
 Every engine returns the **same `Recommendation` contract**, and **only the gateway talks to Ollama**.
 
-> New here? Start with the **[User Guide](docs/USER_GUIDE.md)**.
+> New here? Start with the **[Project Overview](docs/PROJECT_OVERVIEW.md)**, then the **[User Guide](docs/USER_GUIDE.md)**.
 
 ## Current state
 
-A working, tested **vertical slice** is in place and proves the three projects are unified end to end:
+**Steps 0, 1, and 2 of the 6-step plan are complete and pushed.** The three projects are unified end to end, with a unified data layer on real PostgreSQL + Redis.
 
 | Component | Status |
 | --- | --- |
 | `gateway/` — quick/deep/embed routes, schema validation + 1 retry, call logging, `num_ctx=8192` hard cap, threading priority lock | ✅ built, live-tested against Ollama |
-| `quant/` — migrated indicators, regime, rule-based strategy, backtest; returns `Recommendation(source="quant")` | ✅ built |
+| `quant/` — indicators, regime, rule-based strategy, backtest; returns `Recommendation(source="quant")` | ✅ built |
 | `deep/` — `analyze(ticker, as_of, portfolio)` callable, gateway-routed, sign-preserving number-check; TradingAgents seam marked | ✅ built (adapter + seam; real graph wiring is Step 4) |
-| Single `Recommendation` contract imported by every engine | ✅ |
+| `backend/` — full BSE Tracker shell + unified `MarketDataService` (yfinance → Redis → PostgreSQL), news ingest, persisted snapshots | ✅ built |
+| `infra/` — docker-compose: PostgreSQL (pgvector) + Redis; Alembic migrations (rev 002) | ✅ built |
+| Single `Recommendation` contract + one `compute_snapshot_id`, imported by every engine | ✅ |
 | TradingAgents pinned submodule (`v0.7.0`, SHA `e8f5503`) | ✅ |
-| Test suite | ✅ **39 passed**, structured-output validity **20/20 = 100%** |
+| Test suite | ✅ **79 offline + 17 live integration passed**; structured-output validity **20/20 = 100%**; **Gate G2 passed on real data for all 10 golden tickers** |
 
-Measured on the target hardware (RTX 2050, 4 GB VRAM, `llama3.2` 3B, 8k context). See `docs/status.md` for the full week log and `docs/unification-plan.md` for the roadmap.
+Measured on the target hardware (RTX 2050, 4 GB VRAM, `llama3.2` 3B, 8k context).
+
+**Still to come:** Step 3 (quant tables + nightly signals + UI overlays), Step 4 (real TradingAgents graph + overnight deep queue), Step 5 (fusion view, alerts, UI pages), Step 6 (evaluation, paper trading, backups). See `docs/PROJECT_OVERVIEW.md` for the full picture and `docs/unification-plan.md` for the task-level roadmap.
 
 ## Layout
 

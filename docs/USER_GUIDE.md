@@ -84,15 +84,24 @@ Run the full test suite:
 .venv\Scripts\python.exe -m pytest -q
 ```
 
-Expected: **39 passed**. The suite includes:
+Expected: **79 passed** offline. The suite includes:
 - the `Recommendation` contract (validation + JSON round-trip),
 - quant indicators, regime classification, and reproducibility,
 - the deep adapter and its number-check (including a signed-number regression),
 - a **live gateway test against your real Ollama** (skips cleanly if Ollama is down),
 - an integration test proving both lanes share one data snapshot and the conflict flag works,
+- the unified data service, news ingest, and persisted-snapshot unit tests,
 - a **validity-rate harness** asserting ≥95% valid structured output (measured 20/20 = 100%).
 
-If the live gateway tests **skip**, Ollama isn't reachable — start it and re-run.
+For the **live data tests** (real PostgreSQL + Redis + yfinance), bring up the stack and run the integration suite:
+
+```bash
+docker compose -f infra/docker-compose.yml up -d
+.venv\Scripts\python.exe -m alembic -c backend/alembic.ini upgrade head
+.venv\Scripts\python.exe -m pytest -m integration -q    # 17 passed with the stack up
+```
+
+Integration tests **skip with a clear reason** when Docker/Redis/yfinance aren't reachable, so the offline suite stays green either way. If the live gateway tests skip, Ollama isn't running — start it and re-run.
 
 ---
 
@@ -190,16 +199,15 @@ Every engine returns this exact shape (defined once in `backend/app/schemas/reco
 
 ## 8. What's built vs what's next
 
-**Built (working, tested slice):** the gateway, the quant lane, the deep adapter + number-check, the shared contract, the fusion helper, the pinned TradingAgents submodule, and a stable test suite.
+**Built and pushed (Steps 0-2):** the gateway; the quant lane; the deep adapter + number-check; the shared `Recommendation` contract + `compute_snapshot_id`; the fusion helper; the full BSE Tracker backend shell; the unified data service (yfinance → Redis → PostgreSQL) with news ingest and persisted snapshots; `infra/docker-compose.yml` (pgvector + Redis) with Alembic migrations; the pinned TradingAgents submodule; and a stable test suite (79 offline + 17 live integration). **Gate G2 passed on real data for all 10 golden tickers.**
 
-**Next (per `docs/unification-plan.md`):**
-- **Step 2** — one data service (yfinance + Redis cache + PostgreSQL price-bar table), news/announcements ingest, stored data snapshots.
-- **Step 3** — quant `Recommendation` tables + a nightly Celery fast-lane; regime/signal overlays in the React UI.
+**Next (per `docs/unification-plan.md` and `.kiro/steering/remaining-work.md`):**
+- **Step 3** — persist quant `Recommendation`s to a table + a nightly Celery fast-lane; backtest scoring vs Sensex/Nifty; regime/signal overlays in the React UI (Recharts).
 - **Step 4** — wire the real TradingAgents graph into the deep lane (config-only), Celery `deep` queue at concurrency 1 with SSE progress.
 - **Step 5** — fusion view, advisor/coach on the gateway, alerts, new UI pages; retire Chart.js.
 - **Step 6** — backtest grid, paper trading, model comparison, backups + one-command restore.
 
-See `docs/status.md` for the current week and `docs/decisions/` for the rationale behind each major choice.
+See `docs/PROJECT_OVERVIEW.md` for the big picture, `docs/status.md` for the current week, and `docs/decisions/` for the rationale behind each major choice.
 
 ---
 
