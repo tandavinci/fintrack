@@ -1,0 +1,7 @@
+{
+  "task_id": "task-step-2-data-unification",
+  "task_description": "Step 2 of the FinTrack unification: migrate the BSE Tracker backend shell into MONO/backend, then unify data access so all three lanes (tracker/quant/deep) read identical OHLCV bars + indicators (Gate G2). Delivers a unified MarketDataService (yfinance+Redis+Postgres, .BO/.NS, point-in-time), a news ingest table, a persisted content-addressed DataSnapshot, the infra compose stack, real-data integration tests with a materialized golden set, and the per-logical-unit step-2 commits pushed to origin/main. Authoritative design: docs/designs/step-2-data-unification.md (APPROVED).",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005"],
+  "blocked_reason": null
+}

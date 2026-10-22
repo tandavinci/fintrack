@@ -1,0 +1,54 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": 1,
+      "severity": "MEDIUM",
+      "title": "Gate G2 test #3 'Tracker service path' cannot produce a comparable enriched frame as specified",
+      "where": "§9.2 test #3, read with §4.2 and §4.6",
+      "problem": "§4.2 locks the service to RAW OHLCV only (never computes indicators) and §4.6 has the Tracker path call get_ohlcv directly, but §9.2 test #3 asserts enriched-column frame equality AND equal compute_snapshot_id across tracker/quant/deep. compute_snapshot_id intersects canonical columns present on the frame (verified in snapshot.py), so a raw Tracker frame hashes over only OHLCV while quant/deep hash the full enriched set; the ids cannot be equal and the gate is not implementable against the locked service contract.",
+      "fix": "Pin that the three-lane enriched/snapshot-id comparison runs on the ENRICHED frame from the ONE shared quant indicator path: the Tracker lane must enrich the service's raw bars via TechnicalIndicators.add_all + the same dropna before comparison. Assert raw-bar equality separately as the precondition. Alternatively drop the Tracker lane from the enriched/id assertion and state G2 snapshot-id identity is a quant/deep guarantee plus raw-bar equality for the Tracker lane."
+    },
+    {
+      "id": 2,
+      "severity": "MEDIUM",
+      "title": "build_and_store_snapshot can compute a snapshot_id that does not match the lane's id for recent as_of",
+      "where": "§7.2, read with §7.3, §7.4, §4.4a, §5.3, A5",
+      "problem": "build_and_store_snapshot refetches its own enriched frame with use_cache=False and hashes it, while §7.3/§7.4 claim the persisted snapshot IS the one the Recommendation references. Per the design's own §4.4a recent-window rule + §5.3 overwrite-on-upsert, two independent recent-window fetches can return restated bars and thus different snapshot_ids. A5 acknowledges the risk narrowly but it is never reconciled with the flat 'same id / round-trips' claim.",
+      "fix": "Make the persister content-addressed on the SAME frame the lane hashed: add an optional df parameter to build_and_store_snapshot and have the snapshot_sink pass the already-enriched frame so compute_snapshot_id runs over identical bytes. For the standalone test #5 (no lane) pin a HISTORICAL as_of so the DB-authoritative rule removes restatement non-determinism, and assert the stored id equals the lane's id over the same frame."
+    },
+    {
+      "id": 3,
+      "severity": "MEDIUM",
+      "title": "snapshot_sink seam specified as a signature change without pinning the exact signatures the offline suite depends on",
+      "where": "§7.4",
+      "problem": "The design adds a 'trailing optional snapshot_sink' to recommend() and analyze() but never writes the resulting signatures. Current signatures (verified) are recommend(ticker, as_of, df=None) and analyze(ticker, as_of, portfolio=None); the sink must be appended AFTER df / AFTER portfolio, and must be a pure side-effect never altering the returned Recommendation, or the hard requirement that the 39 offline tests stay green is at risk. 'Backward-compatible signature extension' is too vague to implement safely.",
+      "fix": "Write both exact signatures: recommend(ticker, as_of, df=None, snapshot_sink=None) and analyze(ticker, as_of, portfolio=None, snapshot_sink=None), with snapshot_sink: Callable[[str, date, pd.DataFrame], None] | None = None appended LAST. Specify it is invoked after snapshot_id is computed and before return, receives the same enriched df, its return is ignored, and any exception is swallowed-and-logged so a persist failure never changes the Recommendation. In Step 2 the default None is always used."
+    },
+    {
+      "id": 4,
+      "severity": "NIT",
+      "title": "alembic env.py uses the ASYNC url; runbook upgrade requires asyncpg + live DB, state it",
+      "where": "§8.3 step 3 and §3.2, vs verified Tracker-Tool/backend/alembic/env.py",
+      "problem": "The relocated env.py sets sqlalchemy.url from settings.database_url (the asyncpg URL) and runs async online mode. The design defines both a sync and async URL in .env.example but never states that alembic upgrade head runs through asyncpg and needs the compose DB healthy first; a reader could wrongly wire the sync URL into alembic.",
+      "fix": "Add a sentence to §3.2/§8.3: migrations run in async online mode via the unchanged env.py reading settings.database_url (asyncpg); the compose stack must be healthy first; the sync URL is used only by the data-service sync facade, never by alembic."
+    },
+    {
+      "id": 5,
+      "severity": "NIT",
+      "title": "requirements.txt merge both conditionally-gates and unconditionally-lists the four extra Tracker deps",
+      "where": "§3.4",
+      "problem": "The prose gates email-validator/python-jose/passlib/reportlab behind an implementer import grep, but the shown Resulting requirements.txt lists all four unconditionally. Because the relocation copies the whole backend/app tree (auth + report routers wired in main.py), all four are in fact imported at shell import time, so the 'conditional' framing contradicts the listing.",
+      "fix": "State that because Step 2 relocates the whole shell the four are required and listed; keep the grep as a confirmation step, not a gate that could drop them."
+    },
+    {
+      "id": 6,
+      "severity": "NIT",
+      "title": "200-calendar-day >=60-surviving-bar margin is thin and source-dependent (behavior-preserving, not a gap)",
+      "where": "§4.6 and §9.2 test #1",
+      "problem": "Daily dropna consumes ~50 warmup rows (SMA_50); 200 calendar days is ~135-138 BSE trading days minus Indian-market holidays, leaving ~85+ bars, comfortably >60. The claim holds but the margin is not a constant the design controls and it merely preserves existing live-lane behavior (lookback_days=200, verified).",
+      "fix": "None required for correctness; optionally note that if a golden ticker yields <60 surviving daily bars the fix is to raise lookback_days for that fetch, not change the snapshot tail N."
+    }
+  ],
+  "reviewDoc": "c:\\GIT\\Fintech\\repo\\docs\\designs\\step-2-design-review.md"
+}
