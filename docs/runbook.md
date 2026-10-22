@@ -53,6 +53,48 @@ cd infra
 docker compose up -d        # postgres+pgvector, redis, gateway, backend, celery workers
 ```
 
+## Step 2 — data stack
+
+Brings up the pgvector Postgres + Redis 7 data stores (Ollama stays on the host,
+decision 0002) and migrates the Step-2 schema. Run from the repo root with the
+venv's interpreter.
+
+1. Copy the env template (edit secrets if desired):
+
+   ```powershell
+   cp infra/.env.example infra/.env
+   ```
+
+2. Bring up the stores and wait for both healthchecks to report healthy:
+
+   ```powershell
+   docker compose -f infra/docker-compose.yml up -d
+   docker compose -f infra/docker-compose.yml ps   # wait for "healthy"
+   ```
+
+3. From the repo root (editable install done, decision 0006) run the
+   migrations — creates `price_bars`, `news_items`, `data_snapshots` and enables
+   the `vector` extension:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m alembic -c backend/alembic.ini upgrade head
+   ```
+
+4. Smoke (requires the stack up):
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m pytest -m integration -k price_bar
+   ```
+
+5. Tear down (add `-v` to also drop the `pg_data` / `redis_data` volumes):
+
+   ```powershell
+   docker compose -f infra/docker-compose.yml down
+   ```
+
+Offline tests need no stack: `.\.venv\Scripts\python.exe -m pytest -q`.
+Integration tests skip-with-reason (never fail) when the stores are unreachable.
+
 ## Ollama models
 
 ```powershell

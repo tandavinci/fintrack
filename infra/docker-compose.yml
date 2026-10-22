@@ -1,0 +1,39 @@
+name: fintech-infra                         # explicit project name — namespaces volumes (NIT-4)
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16           # pgvector base (unification-plan 1.1)
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fintrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fintrack_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-fintrack}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fintrack}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# Ollama stays on the HOST (decision 0002) — NOT a service here.
+# backend / celery / gateway services are added in later steps (additive).
+
+volumes:
+  pg_data:
+  redis_data:

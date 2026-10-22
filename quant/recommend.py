@@ -78,6 +78,7 @@ def recommend(
     ticker: str,
     as_of: date,
     df: pd.DataFrame | None = None,
+    snapshot_sink=None,
 ) -> Recommendation:
     """Return a quant-lane :class:`Recommendation` for ``ticker`` at ``as_of``.
 
@@ -86,6 +87,11 @@ def recommend(
         as_of: The date the recommendation is anchored to.
         df: Optional pre-warmed DAILY enriched bars. When ``None`` the live
             path fetches daily data through the pipeline.
+        snapshot_sink: Optional forward-compatible persistence seam (design
+            §7.4). When ``None`` (the only Step-2 case) it is a strict no-op and
+            all behavior — including the computed ``snapshot_id`` — is
+            unchanged. Steps 3/4 may pass a callable to persist the snapshot the
+            recommendation references; no Step-2 code passes a non-None sink.
 
     Returns:
         A rule-based, deterministic ``Recommendation`` with ``source='quant'``
@@ -117,6 +123,13 @@ def recommend(
 
     evidence = build_evidence(prediction.indicators_snapshot)
 
+    snapshot_id = compute_snapshot_id(ticker, as_of, df)
+
+    # Forward-compatible persistence seam (design §7.4). A no-op when no sink is
+    # wired (the only Step-2 case); never changes the computed snapshot_id.
+    if snapshot_sink is not None:
+        snapshot_sink(snapshot_id, ticker, as_of, df)
+
     return Recommendation(
         ticker=ticker,
         as_of=as_of,
@@ -129,7 +142,7 @@ def recommend(
         source="quant",
         model_id=None,
         prompt_version=None,
-        snapshot_id=compute_snapshot_id(ticker, as_of, df),
+        snapshot_id=snapshot_id,
     )
 
 

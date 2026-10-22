@@ -240,6 +240,7 @@ def analyze(
     ticker: str,
     as_of: date,
     portfolio: dict | None = None,
+    snapshot_sink=None,
 ) -> Recommendation:
     """Return a deep-lane :class:`Recommendation` for ``ticker`` at ``as_of``.
 
@@ -248,6 +249,11 @@ def analyze(
         as_of: The date the recommendation is anchored to.
         portfolio: Optional mapping of ticker -> numeric holding (folded into
             the prompt context; does not change ``snapshot_id``).
+        snapshot_sink: Optional forward-compatible persistence seam (design
+            §7.4). When ``None`` (the only Step-2 case) it is a strict no-op and
+            all behavior — including the computed ``snapshot_id`` — is
+            unchanged. Steps 3/4 may pass a callable to persist the snapshot the
+            recommendation references; no Step-2 code passes a non-None sink.
 
     Raises:
         ValueError: On bad inputs or an unavailable data snapshot.
@@ -274,6 +280,11 @@ def analyze(
     summary = TechnicalIndicators.summarize(df)
     regime = RegimeAgent().classify(df)
     snapshot_id = compute_snapshot_id(ticker, as_of, df)
+
+    # Forward-compatible persistence seam (design §7.4). A no-op when no sink is
+    # wired (the only Step-2 case); never changes the computed snapshot_id.
+    if snapshot_sink is not None:
+        snapshot_sink(snapshot_id, ticker, as_of, df)
 
     prompt = _build_prompt(
         ticker,
