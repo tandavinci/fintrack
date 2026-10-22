@@ -29,3 +29,6 @@ Thumbs.db
 # Agent workflow artifacts (FEAT task files, reviewer verdicts) — never committed
 .agents/
 gateway/logs/
+
+# Pranav's private scratch space — notes, reports, experiments (never tracked)
+pranav-local/
