@@ -1,0 +1,21 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "severity": "NIT",
+      "summary": "Golden set deviates from the all-.BO design text",
+      "detail": "Design §1 and the FEAT task descriptions specify an all-.BO golden set, but the shipped set is 6 .NS + 4 .BO (RELIANCE.NS, TCS.BO, HDFCBANK.NS, INFY.NS, ICICIBANK.NS, CUMMINSIND.NS, PERSISTENT.NS, MPHASIS.BO, YESBANK.BO, IDEA.BO). This is user-approved Option A after six .BO symbols returned no yfinance data; it is recorded in tests/golden/README.md (CONFIRMED), docs/reviews/step-2-integration-results.md, and ADR 0007, and ticker-resolution code (resolve_market_ticker / Config.resolve_ticker) is unchanged. Non-blocking for G2; the stale design §1 prose could be updated to match."
+    },
+    {
+      "severity": "NIT",
+      "summary": "FEAT-005 findings are stale vs the completed G2 run",
+      "detail": "FEAT-005.json findings record the live Gate G2 run and the golden parquet fixtures as PENDING (Docker unreachable in that environment). Two later commits (1ef3f47 materialize 10 golden parquet fixtures, 1f5c1bc record full 10-ticker G2 equality results) and docs/reviews/step-2-integration-results.md record the completed run; the 10 parquet files are committed (git ls-files confirms) and the working tree is clean. The FEAT-005 record lags the final committed state; no code impact and the gate evidence itself is present and consistent."
+    },
+    {
+      "severity": "NIT",
+      "summary": "Gate G2 exercised at a single as_of",
+      "detail": "tests/test_gate_g2.py runs the cross-lane equality at as_of=2024-01-15 only. The determinism guarantees (exclusive ts<end predicate in both async/sync repositories, DOUBLE PRECISION binary64 OHLCV storage, exact-float Redis serialization with no round()) are path-invariant, so one trading-day anchor is adequate to prove G2; a second anchor would add confidence but is not required by the gate."
+    }
+  ],
+  "summary": "Gate G2 confirmed. The single DataFetcher.fetch_historical seam routes quant and deep through MarketDataService while leaving DataPipeline/TechnicalIndicators/dropna byte-unchanged; fetch_latest is intentionally off the G2 path. Determinism is implemented as designed: price_bars OHLCV are Float(precision=53) (binary64), Redis serializes np.float64->float with no rounding, and the point-in-time read predicate is ts>=start AND ts<end (EXCLUSIVE end) in both async and sync repositories. snapshot_service imports the canonical compute_snapshot_id (never forks) with a content-hash PK and ON CONFLICT DO NOTHING idempotency. The recorded live run reports all 10 golden tickers with frames_equal=yes and equal compute_snapshot_id (as_of=2024-01-15), 17 integration tests passing, and the offline suite green with integration skipped-with-reason when infra is absent. Only NIT-level findings remain (golden-set deviation that is user-approved, stale FEAT-005 record, single-as_of gate); none block Gate G2."
+}
