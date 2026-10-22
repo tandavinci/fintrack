@@ -23,23 +23,40 @@ the reviewer per the Gate G2 requirement.
 3. `python -m pytest -q` (offline) → non-integration tests green.
 4. `python -m pytest -m integration -q` (stack up) → see outcomes below.
 
-## Gate G2 — cross-lane equality (THE gate)
+## Gate G2 — cross-lane equality (THE gate) — ALL 10 GOLDEN TICKERS
 
-For every materialized golden ticker the three lanes (quant `DataPipeline`,
+For every one of the 10 golden tickers the three lanes (quant `DataPipeline`,
 deep adapter pipeline, Tracker `MarketDataService` + the one
 `TechnicalIndicators` path) produced **byte-identical enriched frames AND an
-identical `compute_snapshot_id`**. `as_of = 2024-01-15` (a BSE session).
+identical `compute_snapshot_id`**. `as_of = 2024-01-15` (a trading session).
+Real measured values (no fabricated rows); every ticker returned data, so there
+are no skips.
 
 | Ticker | price_bars rows | enriched rows | frames_equal | snapshot_id (prefix) | G2_equal |
 | --- | --- | --- | --- | --- | --- |
-| TCS.BO | 270 | 85 | yes | `bc3906e7658bcd4f` | **yes** |
-| MPHASIS.BO | 270 | 85 | yes | `9600d9fd016f0831` | **yes** |
+| RELIANCE.NS | 270 | 85 | yes | `36548e2edbdb15a1` | **yes** |
+| TCS.BO | 270 | 85 | yes | `b1c42546c2e5451d` | **yes** |
+| HDFCBANK.NS | 270 | 85 | yes | `26ffd937ddf55b7b` | **yes** |
+| INFY.NS | 270 | 85 | yes | `2d14a8de9af087cf` | **yes** |
+| ICICIBANK.NS | 270 | 85 | yes | `822c3002b7614cfe` | **yes** |
+| CUMMINSIND.NS | 270 | 85 | yes | `767ff7a23a9b7304` | **yes** |
+| PERSISTENT.NS | 270 | 85 | yes | `e285bdd0426c66ef` | **yes** |
+| MPHASIS.BO | 270 | 85 | yes | `4574aac62a99017e` | **yes** |
 | YESBANK.BO | 270 | 85 | yes | `6768f5ebeaff6e19` | **yes** |
 | IDEA.BO | 270 | 85 | yes | `631ae3b7c5a24125` | **yes** |
 
-`tests/test_gate_g2.py::test_gate_g2_cross_lane_frame_and_snapshot_equality` **PASSED**.
-`tests/test_news_ingest_integration.py::test_ingest_is_idempotent_on_rerun` **PASSED**
-(real Postgres, dedup re-run adds 0 rows).
+Full live integration suite: **17 passed, 0 failed** (`pytest -m integration`):
+- `test_gate_g2.py::test_gate_g2_cross_lane_frame_and_snapshot_equality` PASSED
+  (across all 10 materialized golden tickers).
+- `test_data_service_integration.py` — all 4 PASSED (real fetch lands rows,
+  cached second read hits no network, cold==DB==Redis snapshot_id on a
+  trading-day `as_of`, historical read is DB-authoritative).
+- `test_golden_materialize.py` — all 10 PASSED (fixtures materialized).
+- `test_news_ingest_integration.py::test_ingest_is_idempotent_on_rerun` PASSED
+  (real Postgres, dedup re-run adds 0 rows).
+- `test_snapshot_integration.py::test_snapshot_build_is_idempotent` PASSED
+  (same snapshot_id twice, exactly one `data_snapshots` row, payload
+  round-trips).
 
 ## Cross-FEAT seam fixes applied (committed)
 
@@ -62,25 +79,24 @@ Commit `step-2: fix cross-FEAT integration seams ...`:
    integration suite skip while the data path was healthy. The probe now
    succeeds on the first golden ticker that returns rows.
 
-## OPEN decision (blocks full-set APPROVED) — golden `.BO` ticker availability
+## Golden `.BO` ticker availability — RESOLVED (user decision, Option A)
 
-Real-data finding, stable across retries (`as_of` clock is 2026-10):
+Real-data finding, stable across retries: six `.BO` symbols (RELIANCE.BO,
+HDFCBANK.BO, INFY.BO, ICICIBANK.BO, CUMMINSIND.BO, PERSISTENT.BO) returned NO
+data from Yahoo, while all six `.NS` equivalents — and the four live `.BO`
+symbols (TCS.BO, MPHASIS.BO, YESBANK.BO, IDEA.BO) — returned full 200-day
+windows.
 
-| Returns data on Yahoo `.BO` | No data on `.BO` (but works on `.NS`) |
-| --- | --- |
-| TCS.BO, MPHASIS.BO, YESBANK.BO, IDEA.BO | RELIANCE.BO, HDFCBANK.BO, INFY.BO, ICICIBANK.BO, CUMMINSIND.BO, PERSISTENT.BO |
+**User chose Option A:** switch the six dead symbols to `.NS`, keep the four
+live symbols on `.BO`, so the golden set spans BOTH exchanges. The hardcoded
+`RELIANCE.BO` in `test_data_service_integration.py` and
+`test_snapshot_integration.py` was switched to `RELIANCE.NS`. Ticker resolution
+(`quant.Config.resolve_ticker`) was NOT changed — golden-set/test-ticker
+selection only. Rationale recorded in `tests/golden/README.md`. Final golden set:
 
-All 10 `.NS` (NSE) equivalents return data. The golden set in
-`tests/golden/README.md` is explicitly flagged "NEEDS USER CONFIRMATION".
+```
+RELIANCE.NS, TCS.BO, HDFCBANK.NS, INFY.NS, ICICIBANK.NS,
+CUMMINSIND.NS, PERSISTENT.NS, MPHASIS.BO, YESBANK.BO, IDEA.BO
+```
 
-Because switching the golden/test tickers from `.BO` to `.NS` (or changing the
-default ticker resolution) changes WHICH EXCHANGE'S PRICES the whole system
-reads — a user-visible product decision — the fixer did NOT make that change.
-Failing integration cases that are blocked purely by this (all trace to dead
-`.BO` symbols, `RELIANCE.BO` in particular):
-
-- `tests/test_data_service_integration.py` (4 tests, `GOLDEN = "RELIANCE.BO"`).
-- `tests/test_snapshot_integration.py` (`TICKER = "RELIANCE.BO"`).
-- `tests/test_golden_materialize.py` — 6 dead-symbol cases.
-
-Awaiting the user's choice of golden tickers / exchange before these can pass.
+After the switch, the full live integration suite is green (17 passed, above).
