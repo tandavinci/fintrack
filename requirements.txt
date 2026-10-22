@@ -12,7 +12,14 @@ pandas==2.2.2
 # numpy pinned 1.26.4 to match pandas 2.2.2 wheels / avoid numpy-2 ABI churn.
 numpy==1.26.4
 ta==0.11.0
-yfinance==0.2.40
+# yfinance bumped off the slice's 0.2.40 pin: Yahoo added a bot-protection
+# check that 0.2.40's plain-requests transport cannot clear, so every fetch
+# failed with "Expecting value / no timezone found" (0 rows) even though raw
+# HTTPS to Yahoo works. yfinance >= ~0.2.5x switched to curl_cffi (browser
+# TLS/JA3 impersonation) to get past it. 1.7.0 is verified against the live
+# stack to return real OHLCV for .BO/.NS tickers (Gate G2 real-data path).
+# Ref: https://github.com/ranaroussi/yfinance/issues/2469
+yfinance==1.7.0
 pytest==8.*
 pytest-asyncio==0.23.*
 # --- Tracker shell deps (Step 2; pinned, no overlap with the slice) ---

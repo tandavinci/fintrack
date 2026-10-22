@@ -15,7 +15,6 @@ Redis serialization keep ``compute_snapshot_id`` identical on every read path
 
 from __future__ import annotations
 
-import asyncio
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -35,6 +34,7 @@ from tests.integration_helpers import (  # noqa: F401 (fixtures)
     require_postgres,
     require_redis,
     require_yfinance,
+    run_async,
 )
 
 pytestmark = pytest.mark.integration
@@ -57,7 +57,7 @@ def test_real_fetch_lands_rows_in_price_bars(
     """get_ohlcv(golden,'1d',lookback_days=200) lands >=60 rows in price_bars
     under the RESOLVED ticker + interval."""
     svc = _svc()
-    df = asyncio.run(svc.get_ohlcv(GOLDEN, "1d", lookback_days=200))
+    df = run_async(svc.get_ohlcv(GOLDEN, "1d", lookback_days=200))
     assert not df.empty
     assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
     assert count_price_bars(RESOLVED, "1d") >= 60
@@ -73,7 +73,7 @@ def test_second_fetch_hits_no_network(
     first result (served from Redis/DB)."""
     svc = _svc()
     end = date.today()
-    first = asyncio.run(svc.get_ohlcv(GOLDEN, "1d", end=end, lookback_days=200))
+    first = run_async(svc.get_ohlcv(GOLDEN, "1d", end=end, lookback_days=200))
 
     # Spy the yfinance leg: any call on the second fetch is a failure.
     hits = {"n": 0}
@@ -87,7 +87,7 @@ def test_second_fetch_hits_no_network(
 
     svc2 = _svc()
     svc2._fetch_yfinance = types.MethodType(_spy, svc2)  # type: ignore[attr-defined]
-    second = asyncio.run(svc2.get_ohlcv(GOLDEN, "1d", end=end, lookback_days=200))
+    second = run_async(svc2.get_ohlcv(GOLDEN, "1d", end=end, lookback_days=200))
 
     assert hits["n"] == 0, "second fetch must be served from cache/DB, not yfinance"
     pd.testing.assert_frame_equal(first, second)
@@ -115,16 +115,16 @@ def test_cold_db_redis_snapshot_ids_equal_on_trading_day(
 
     # (i) cold fetch: empty DB + flushed Redis -> yfinance, upsert, warm.
     flush_ohlcv_cache()
-    cold = asyncio.run(svc.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
+    cold = run_async(svc.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
     cold_id = compute_snapshot_id(GOLDEN, as_of, _enriched(cold))
 
     # (ii) flush Redis -> force a DB-served read of the same window.
     flush_ohlcv_cache()
-    db_df = asyncio.run(svc.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
+    db_df = run_async(svc.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
     db_id = compute_snapshot_id(GOLDEN, as_of, _enriched(db_df))
 
     # (iii) warm Redis (the previous call warmed it) -> Redis-served read.
-    redis_df = asyncio.run(svc.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
+    redis_df = run_async(svc.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
     redis_id = compute_snapshot_id(GOLDEN, as_of, _enriched(redis_df))
 
     assert cold_id == db_id == redis_id
@@ -148,7 +148,7 @@ def test_historical_window_is_db_authoritative_no_refetch(
     svc = _svc()
     # Seed by one real fetch of the historical window.
     flush_ohlcv_cache()
-    seeded = asyncio.run(svc.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
+    seeded = run_async(svc.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
     assert not seeded.empty
 
     # Now spy yfinance and read the same window again (flush Redis so the read
@@ -165,7 +165,7 @@ def test_historical_window_is_db_authoritative_no_refetch(
 
     svc2 = _svc()
     svc2._fetch_yfinance = types.MethodType(_spy, svc2)  # type: ignore[attr-defined]
-    served = asyncio.run(svc2.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
+    served = run_async(svc2.get_ohlcv(GOLDEN, "1d", start=start, end=end, lookback_days=200))
 
     assert hits["n"] == 0, "historical read must not trigger a refetch"
     pd.testing.assert_frame_equal(seeded, served)

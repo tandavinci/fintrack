@@ -12,7 +12,6 @@ test skips-with-reason.
 
 from __future__ import annotations
 
-import asyncio
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -25,7 +24,11 @@ from backend.app.database import create_sync_session
 from backend.app.models.news_item import NewsItem
 from backend.app.services.news_service import NewsService
 
-from tests.integration_helpers import count_news_items, require_postgres  # noqa: F401
+from tests.integration_helpers import (  # noqa: F401
+    count_news_items,
+    require_postgres,
+    run_async,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -69,11 +72,11 @@ def test_ingest_is_idempotent_on_rerun(require_postgres, rss_server, clean_fixtu
     """First ingest adds the fixture items; a second ingest adds zero (dedup)."""
     service = NewsService()
 
-    first = asyncio.run(service.ingest_rss(feeds=[rss_server]))
+    first = run_async(service.ingest_rss(feeds=[rss_server]))
     assert first["added"] == 3, f"expected 3 new rows, got {first}"
     after_first = count_news_items()
 
-    second = asyncio.run(service.ingest_rss(feeds=[rss_server]))
+    second = run_async(service.ingest_rss(feeds=[rss_server]))
     assert second["added"] == 0, f"re-run must add no duplicates, got {second}"
     after_second = count_news_items()
 

@@ -19,7 +19,6 @@ a reason when a source is down or the fixtures are absent.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import date
 from pathlib import Path
 
@@ -40,6 +39,7 @@ from tests.integration_helpers import (  # noqa: F401 (fixtures)
     require_postgres,
     require_redis,
     require_yfinance,
+    run_async,
 )
 
 pytestmark = pytest.mark.integration
@@ -97,7 +97,7 @@ def test_gate_g2_cross_lane_frame_and_snapshot_equality(
 
         # (c) Tracker MarketDataService path: raw bars -> the ONE enrichment path.
         svc = MarketDataService()
-        raw = asyncio.run(
+        raw = run_async(
             svc.get_ohlcv(ticker, "1d", end=as_of, lookback_days=LOOKBACK_DAYS)
         )
         tracker_df = _enriched(raw)

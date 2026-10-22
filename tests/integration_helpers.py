@@ -73,21 +73,37 @@ def redis_up() -> bool:
         return False
 
 
-def yfinance_up(symbol: str = "RELIANCE.BO") -> bool:
-    """True only when a tiny yfinance daily fetch returns at least one row."""
+def yfinance_up(symbol: str | None = None) -> bool:
+    """True when yfinance can fetch at least one golden ticker from Yahoo.
+
+    The probe answers "is the yfinance -> Yahoo path working", NOT "is one
+    specific symbol listed". A single golden symbol that Yahoo no longer
+    serves (its BSE coverage for some symbols has gaps) must NOT make the whole
+    integration suite skip while the data path is actually healthy. So when no
+    explicit ``symbol`` is given, the probe tries the golden tickers in order
+    over a 200-day window (the window the suite materializes against) and
+    succeeds on the FIRST one that returns rows.
+    """
     try:
         import yfinance as yf
-
-        end = date.today()
-        start = end - timedelta(days=10)
-        df = yf.Ticker(symbol).history(
-            start=start.strftime("%Y-%m-%d"),
-            end=end.strftime("%Y-%m-%d"),
-            interval="1d",
-        )
-        return not df.empty
     except Exception:
         return False
+
+    candidates = [symbol] if symbol else GOLDEN_TICKERS
+    end = date.today()
+    start = end - timedelta(days=200)
+    for sym in candidates:
+        try:
+            df = yf.Ticker(sym).history(
+                start=start.strftime("%Y-%m-%d"),
+                end=end.strftime("%Y-%m-%d"),
+                interval="1d",
+            )
+            if not df.empty:
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _port_open(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -99,6 +115,49 @@ def _port_open(host: str, port: int, timeout: float = 1.0) -> bool:
 
 
 # --- pytest fixtures ----------------------------------------------------------
+
+
+_SHARED_LOOP = None
+
+
+def _get_shared_loop():
+    """One persistent event loop reused by every ``run_async`` in the process.
+
+    The Tracker app caches an async SQLAlchemy engine (``backend.app.database``)
+    and an async Redis client (``backend.app.cache``) at module scope. Under the
+    real app this is correct — they live for the app's single, long-lived event
+    loop. A bare ``asyncio.run(...)`` per call, by contrast, creates then CLOSES
+    a fresh loop each time, so the module singletons (and their asyncpg pool /
+    Redis connections) end up bound to a CLOSED loop; the next call then fails
+    with "Event loop is closed" (Redis) or asyncpg's "'NoneType' object has no
+    attribute 'send'" (dead connection), and the pool later errors terminating
+    those connections on a different loop.
+
+    Reusing ONE loop for the whole test session matches production's single-loop
+    model exactly, so the cached engine/Redis are always driven by the loop that
+    created them. Production code is untouched — only the integration tests use
+    this helper.
+    """
+    import asyncio
+
+    global _SHARED_LOOP
+    if _SHARED_LOOP is None or _SHARED_LOOP.is_closed():
+        _SHARED_LOOP = asyncio.new_event_loop()
+    return _SHARED_LOOP
+
+
+def run_async(coro):
+    """Run a coroutine on the shared session event loop.
+
+    Use this in the integration suite in place of a bare ``asyncio.run`` whenever
+    more than one async call happens in a process (which is always, across
+    parametrized cases and the cold/DB/Redis sequences). All calls share one loop
+    so the module-level async engine + Redis client stay bound to a live loop."""
+    import asyncio
+
+    loop = _get_shared_loop()
+    asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 
 @pytest.fixture

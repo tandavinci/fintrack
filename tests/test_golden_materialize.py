@@ -14,7 +14,6 @@ fixtures consumed by ``test_golden_loader.py`` and the offline G2 check.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import pytest
@@ -27,6 +26,7 @@ from tests.integration_helpers import (  # noqa: F401 (fixtures)
     require_postgres,
     require_redis,
     require_yfinance,
+    run_async,
 )
 
 pytestmark = pytest.mark.integration
@@ -48,7 +48,7 @@ def test_materialize_golden_parquet(
 ):
     """Fetch 200-day daily bars through the service and save the parquet fixture."""
     svc = MarketDataService()
-    df = asyncio.run(svc.get_ohlcv(ticker, "1d", lookback_days=GOLDEN_LOOKBACK_DAYS))
+    df = run_async(svc.get_ohlcv(ticker, "1d", lookback_days=GOLDEN_LOOKBACK_DAYS))
 
     # A real golden ticker returns a usable window; a thin fetch (e.g. a
     # delisted/suspended symbol) is a skip, not a hard failure of the suite.
