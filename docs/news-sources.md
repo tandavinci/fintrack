@@ -11,6 +11,13 @@ only inside point-in-time `DataSnapshot` payloads for the operator's own
 analysis. Nothing scraped here is re-published, redistributed, or served to
 third parties — matching `scope.md`'s no-redistribution stop-and-pivot rule.
 
+> Cross-reference: the Step-2 wrap-up in `docs/status.md` (Week 3) and the
+> determinism decision ADR `docs/decisions/0007-g2-data-determinism.md` both
+> point back to this document for the per-source terms of use, attribution, and
+> the allowed-use note. The news lane's INCLUSIVE `published_at <= as_of`
+> boundary (vs the bars' EXCLUSIVE `ts < as_of`) is recorded as an intentional
+> asymmetry in that ADR.
+
 ## Shipped default is a non-resolvable PLACEHOLDER
 
 The `NEWS_RSS_FEEDS` value shipped in `infra/.env.example`

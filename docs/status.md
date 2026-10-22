@@ -2,6 +2,86 @@
 
 Format per STEERING §11. Newest week on top.
 
+## Week 3 (2026-10-21) — Step 2 data unification (FEAT-001 … FEAT-005)
+
+Current step / gate: Step 2 built and committed; Gate G2 (identical bars +
+indicators across the three lanes) is IMPLEMENTED and passes in its offline,
+network-free form; the live-stack G2 run is pending (see open items).
+
+Built across all FEATs:
+- FEAT-001 — relocated the full BSE Tracker backend shell into
+  `backend/` under the monorepo. Mechanical `app.`→`backend.app.` rename only
+  (rule 5: relocate, do not rewrite), 57 files, verified byte-identical to SRC-T
+  with the prefix substitution. The three contract files
+  (`recommendation`/`snapshot`/`fusion`) are byte-unchanged; `schemas/__init__.py`
+  is the merged 34-name export (SRC-T's 29 + the 5 contract names). SRC-T at
+  `c:\GIT\Fintech\Tracker-Tool` is left untouched as the running backup until G2
+  passes live.
+- FEAT-002 — the single unified `MarketDataService`
+  (`backend/app/services/data_service.py`): service → Redis → Postgres →
+  yfinance, `.BO`/`.NS` resolution, one window-normalization step with an
+  EXCLUSIVE `end`/`as_of` boundary, and byte-faithful `float64` frames on every
+  path. Added the `PriceBar`, `NewsItem`, `DataSnapshot` models and Alembic
+  revision 002 (all three tables + the `vector` extension), the shared sync
+  engine in `database.py`, the dependency merge + `packages.find` switch, and the
+  ONE `DataFetcher.fetch_historical` seam that routes quant AND deep through the
+  service (the G2 core). `price_bars` OHLCV is `DOUBLE PRECISION` (binary64).
+- FEAT-003 — news/announcements ingest (RSS-first via `feedparser`, BSE
+  announcements behind a default-off flag) with a dedup-hash + point-in-time
+  `recent_for_ticker` (news reads are INCLUSIVE `published_at <= as_of`), the
+  persisted `DataSnapshot` service (`build_and_store_snapshot`, synchronous,
+  idempotent via `ON CONFLICT (snapshot_id) DO NOTHING`, `snapshot_id` from the
+  IMPORTED `compute_snapshot_id` — never forked), the forward-compatible lane
+  sinks (`snapshot_sink=None` no-op in Step 2), the `infra/` compose + env
+  stack, and the `docs/news-sources.md` terms-of-use deliverable.
+- FEAT-004 — the real-infra integration suite behind an `integration` marker,
+  the Gate G2 cross-lane equality gate (`tests/test_gate_g2.py`), the golden-set
+  materialization test, and the offline golden-loader test. Added `pyarrow` for
+  lossless parquet golden fixtures. Every integration test skips-with-reason
+  (never fails) when Postgres/Redis/yfinance/RSS is unreachable.
+- FEAT-005 — this wrap-up: the Week-3 status entry, ADR
+  `0007-g2-data-determinism.md`, the news-sources ToU cross-reference, the
+  per-logical-unit `step-2:` commits, and the user-authorized push to
+  `origin/main`.
+
+Measured results:
+- Offline suite (no Postgres/Redis/network): **59 passed, 20 skipped**
+  — the 39 pre-existing slice tests stay green, plus the new offline unit,
+  loader, and data-service tests; the 20 skips are the integration tests and the
+  golden-loader tests skipping WITH REASON because no infra and no committed
+  parquet fixtures exist in this environment. Zero failures.
+- Gate G2 element-wise frame equality + equal `snapshot_id` across
+  tracker/quant/deep: the gate is written and holds under the offline,
+  patched-frame equality path; the LIVE measured result (per-ticker row counts,
+  the cold/DB/Redis `snapshot_id` equality at a trading-day `as_of`) is
+  **PENDING a live-stack run** — Docker was not reachable in the build/push
+  environment, so the stack could not be brought up, the 200-day `.BO` golden
+  bars could not be fetched through yfinance, and G2 could not be executed
+  against real bars. The parquet fixtures under `tests/golden/` are therefore not
+  yet committed. See the open items below; nothing in the code changes when the
+  run happens — only the saved parquet set and the recorded measurement.
+
+Open items (carried, not blockers to the Step-2 code landing):
+- **A8 — golden ticker list + live G2 run.** The 10-ticker `.BO` golden set in
+  `tests/golden/README.md` is still marked "NEEDS USER CONFIRMATION." On a
+  machine with Docker + reachable yfinance, bring up
+  `infra/docker-compose.yml`, run `alembic -c backend/alembic.ini upgrade head`
+  from the repo root, then `pytest -m integration` to materialize the parquet
+  goldens and execute the G2 gate live; record the measured row counts and
+  `snapshot_id` equality here.
+- **A3 — `.BO` default for bare Indian symbols.** Resolution appends `.BO` to a
+  bare stock symbol; US tickers passed bare would be mis-suffixed. A product
+  decision, flagged in the design (§11 A3).
+- **A6 — BSE announcements default-off.** `NEWS_BSE_ANNOUNCEMENTS_ENABLED=false`;
+  the `bsedata` announcements endpoint reachability + ToS are unverified
+  (design §11 A6). Per-source terms of use, attribution, and the allowed-use note
+  (personal research, non-redistributed) are documented in
+  `docs/news-sources.md`, and the determinism decisions are recorded in ADR
+  `0007-g2-data-determinism.md`.
+
+Decision notes added: 0007 (G2 data determinism — exclusive-end boundary +
+DOUBLE PRECISION / exact-float Redis serialization).
+
 ## Week 2 (2026-10-21) — Unified slice complete (FEAT-001 … FEAT-005)
 
 Current step / gate: Slice done; Gate G1 (structured-output validity) passed.
