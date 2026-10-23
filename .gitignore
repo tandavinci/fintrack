@@ -33,3 +33,6 @@ gateway/logs/
 
 # Pranav's private scratch space — notes, reports, experiments (never tracked)
 pranav-local/
+
+# Code-review artifacts (local workflow output, like .agents/) — never tracked
+semantic-review/

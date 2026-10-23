@@ -26,7 +26,12 @@ from datetime import date
 
 from backend.app.repositories.recommendation_repository import SyncRecommendationRepository
 from backend.app.schemas.recommendation import Recommendation
-from backend.app.services.snapshot_service import build_and_store_snapshot
+from backend.app.services.snapshot_service import (
+    SNAPSHOT_INTERVAL,
+    SNAPSHOT_LOOKBACK_DAYS,
+    build_and_store_snapshot,
+)
+from quant.data.pipeline import DataPipeline
 from quant.recommend import recommend
 
 logger = logging.getLogger(__name__)
@@ -42,11 +47,22 @@ def persist_quant_recommendation(ticker: str, as_of: date) -> Recommendation:
     Returns:
         The persisted :class:`Recommendation` (``source='quant'``).
     """
-    # 1. Snapshot first so the FK target row exists.
-    build_and_store_snapshot(ticker, as_of)
+    # 0. Fetch the enriched daily frame ONCE and thread it through both halves
+    #    so the snapshot and the recommendation hash byte-identical bars — their
+    #    snapshot_ids match by construction, closing the FK window the review
+    #    flagged (and halving the yfinance/DB load).
+    df = DataPipeline(ticker=ticker, interval=SNAPSHOT_INTERVAL).get_enriched_data(
+        end_date=as_of.isoformat(),
+        interval=SNAPSHOT_INTERVAL,
+        lookback_days=SNAPSHOT_LOOKBACK_DAYS,
+        use_cache=False,
+    )
 
-    # 2. Rule-based quant Recommendation (its snapshot_id matches step 1's row).
-    rec = recommend(ticker, as_of)
+    # 1. Snapshot first (over THIS frame) so the FK target row exists.
+    build_and_store_snapshot(ticker, as_of, df=df)
+
+    # 2. Rule-based quant Recommendation over the SAME frame -> matching snapshot_id.
+    rec = recommend(ticker, as_of, df=df)
 
     # 3. Upsert keyed on (ticker, as_of, source).
     SyncRecommendationRepository().save(rec)

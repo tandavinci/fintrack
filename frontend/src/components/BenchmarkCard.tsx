@@ -18,16 +18,20 @@ interface BenchmarkCardProps {
 }
 
 /**
- * Benchmark context card: the 1..5 rating as filled/empty stars, the benchmark
- * name, and the excess return (green when positive, red when negative — the
- * existing buy/sell colours). Renders a muted "unavailable" line when the
- * backend could not compute the benchmark (benchmark === null).
+ * Benchmark context card. IMPORTANT (honest labelling): the figure here is the
+ * STOCK's own buy-and-hold return over the recent window minus the index's
+ * buy-and-hold — i.e. "did holding this stock beat holding the index". It is
+ * NOT the strategy/signal's realised return (that proper strategy-vs-benchmark
+ * score belongs to the Backtest Lab, a later step). Shown as a 1..5 rating of
+ * stars, the index name, and the relative return (green positive / red
+ * negative). Renders a muted "unavailable" line when the backend could not
+ * compute it (benchmark === null).
  */
 export function BenchmarkCard({ benchmark }: BenchmarkCardProps) {
   if (!benchmark) {
     return (
       <Card className="flex flex-col gap-3">
-        <CardTitle>Benchmark</CardTitle>
+        <CardTitle>Stock vs Index</CardTitle>
         <p className="text-sm text-muted">Benchmark comparison unavailable.</p>
       </Card>
     );
@@ -39,11 +43,11 @@ export function BenchmarkCard({ benchmark }: BenchmarkCardProps) {
 
   return (
     <Card className="flex flex-col gap-4">
-      <CardTitle>Benchmark</CardTitle>
+      <CardTitle>Stock vs Index</CardTitle>
 
       <div className="flex items-center justify-between">
         <div className="text-sm text-muted">
-          vs{" "}
+          buy &amp; hold vs{" "}
           <span className="font-semibold text-slate-200">
             {indexLabel(benchmark.index)}
           </span>
@@ -75,16 +79,16 @@ export function BenchmarkCard({ benchmark }: BenchmarkCardProps) {
           {positive ? "+" : ""}
           {excess.toFixed(2)}%
         </span>
-        <span className="text-xs text-muted">excess return</span>
+        <span className="text-xs text-muted">vs index (buy &amp; hold)</span>
       </div>
 
       <p className="text-xs text-muted">
-        Benchmark return{" "}
+        {indexLabel(benchmark.index)} returned{" "}
         <span className="font-medium text-slate-300">
           {benchmark.benchmark_return_pct >= 0 ? "+" : ""}
           {benchmark.benchmark_return_pct.toFixed(2)}%
         </span>{" "}
-        over the window.
+        over the same recent window. Not the signal's own return.
       </p>
     </Card>
   );

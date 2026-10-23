@@ -122,14 +122,20 @@ def _compute_signal(ticker: str) -> SignalResponse:
 
 
 def _compute_benchmark(df, as_of: date) -> BenchmarkInfo | None:
-    """Best-effort benchmark context for ``df`` vs the default index.
+    """Best-effort "stock vs index" context for ``df`` vs the default index.
 
-    Compares the ticker's own buy-and-hold over the fetched window against the
-    benchmark's buy-and-hold over the same lookback, then scores + rates it with
-    the pure :func:`score_vs_benchmark`. Returns ``None`` on ANY failure (e.g.
-    the benchmark fetch is rate-limited) so the benchmark never breaks the
-    signal request. Runs inside the existing worker thread (the caller), so the
-    extra fetch does not touch the event loop.
+    Compares the TICKER's own buy-and-hold against the index's buy-and-hold,
+    then scores + rates it with the pure :func:`score_vs_benchmark`. This is
+    deliberately NOT the signal/strategy's realised return (that strategy-vs-
+    benchmark score belongs to the later Backtest Lab); the UI card is labelled
+    "Stock vs Index" to match. The two windows are approximately — not exactly —
+    aligned: the ticker series is the enriched ``df`` (post-indicator-warmup)
+    while the index series is ``lookback_days`` of raw closes, so treat the
+    figure as recent-window context, not a precise same-bar comparison.
+
+    Returns ``None`` on ANY failure (e.g. the benchmark fetch is rate-limited)
+    so the benchmark never breaks the signal request. Runs inside the existing
+    worker thread (the caller), so the extra fetch does not touch the event loop.
     """
     try:
         closes = df["Close"].tolist()
