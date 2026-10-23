@@ -81,5 +81,11 @@ export const SAMPLE_SIGNAL: SignalResponse = {
     reasoning:
       "Market classified as BEARISH_TREND (confidence: 52%). Key factors: net price change -3.1%, SMA20 below SMA50 (death cross), RSI at 47 (bearish momentum).",
   },
+  benchmark: {
+    index: "^NSEI",
+    benchmark_return_pct: 4.2,
+    excess_return_pct: -1.8,
+    rating: 3,
+  },
   chart: buildChart(),
 };

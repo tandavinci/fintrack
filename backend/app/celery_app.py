@@ -42,8 +42,14 @@ celery_app.conf.update(
         "app.tasks.alert_monitor",
         "app.tasks.insight_calculator",
         "app.tasks.email_tasks",
+        "app.tasks.quant_recommender",
     ],
 )
+
+# Route the nightly quant fast-lane to the dedicated `quant` queue (Step 3 / G3).
+celery_app.conf.task_routes = {
+    "app.tasks.quant_recommender.*": {"queue": "quant"},
+}
 
 # Celery Beat schedule
 celery_app.conf.beat_schedule = {
@@ -78,6 +84,15 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=16, minute=0, day_of_week="mon-fri"),
         "options": {
             "expires": 3600,
+        },
+    },
+    # Nightly quant signals: post-market (4:30 PM IST, after 3:30 PM close), Mon-Fri.
+    # Routed to the dedicated `quant` queue (Step 3 / G3).
+    "generate-nightly-signals": {
+        "task": "app.tasks.quant_recommender.generate_nightly_signals",
+        "schedule": crontab(hour=16, minute=30, day_of_week="mon-fri"),
+        "options": {
+            "queue": "quant",
         },
     },
     # Weekly cleanup: every Sunday at 2:00 AM IST

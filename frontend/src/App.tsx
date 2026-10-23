@@ -9,6 +9,7 @@ import {
 import { TickerSelect } from "@/components/ui/TickerSelect";
 import { SignalCard } from "@/components/SignalCard";
 import { RegimeBadge } from "@/components/RegimeBadge";
+import { BenchmarkCard } from "@/components/BenchmarkCard";
 import { PriceChart } from "@/components/PriceChart";
 import { EvidencePanel } from "@/components/EvidencePanel";
 
@@ -69,7 +70,10 @@ export default function App() {
                 reasoning={data.regime.reasoning}
               />
             </div>
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-1">
+              <BenchmarkCard benchmark={data.benchmark} />
+            </div>
+            <div className="lg:col-span-1">
               <EvidencePanel evidence={data.recommendation.evidence} />
             </div>
           </div>

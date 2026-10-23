@@ -39,6 +39,14 @@ export interface ChartPoint {
   sma50: number | null;
 }
 
+/** Best-effort benchmark context (null when the benchmark fetch failed). */
+export interface BenchmarkInfo {
+  index: string;
+  benchmark_return_pct: number;
+  excess_return_pct: number;
+  rating: number;
+}
+
 /** The full response from the live quant signal endpoint. */
 export interface SignalResponse {
   recommendation: Recommendation;
@@ -48,6 +56,8 @@ export interface SignalResponse {
     reasoning: string;
   };
   chart: ChartPoint[];
+  /** Optional benchmark comparison; null/absent when unavailable. */
+  benchmark?: BenchmarkInfo | null;
 }
 
 export class ApiError extends Error {

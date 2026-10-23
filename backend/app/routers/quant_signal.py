@@ -21,6 +21,11 @@ from pydantic import BaseModel
 
 from backend.app.schemas.recommendation import Recommendation
 from quant.agents.regime_agent import RegimeAgent
+from quant.backtesting.benchmark import (
+    DEFAULT_BENCHMARK,
+    fetch_benchmark_closes,
+    score_vs_benchmark,
+)
 from quant.data.indicators import TechnicalIndicators
 from quant.data.pipeline import DataPipeline
 from quant.recommend import recommend
@@ -41,10 +46,21 @@ class RegimeInfo(BaseModel):
     reasoning: str
 
 
+class BenchmarkInfo(BaseModel):
+    """Best-effort benchmark context for the UI (may be absent)."""
+    index: str
+    benchmark_return_pct: float
+    excess_return_pct: float
+    rating: int
+
+
 class SignalResponse(BaseModel):
     recommendation: Recommendation
     regime: RegimeInfo
     chart: list[ChartPoint]
+    # Best-effort: None when the benchmark fetch/score fails. The benchmark
+    # NEVER fails the whole request (it is decoration, not the signal).
+    benchmark: BenchmarkInfo | None = None
 
 
 # How many trailing daily bars to send to the chart (keeps the payload small).
@@ -91,6 +107,8 @@ def _compute_signal(ticker: str) -> SignalResponse:
             )
         )
 
+    benchmark = _compute_benchmark(df, as_of)
+
     return SignalResponse(
         recommendation=rec,
         regime=RegimeInfo(
@@ -99,7 +117,42 @@ def _compute_signal(ticker: str) -> SignalResponse:
             reasoning=regime.reasoning,
         ),
         chart=chart,
+        benchmark=benchmark,
     )
+
+
+def _compute_benchmark(df, as_of: date) -> BenchmarkInfo | None:
+    """Best-effort benchmark context for ``df`` vs the default index.
+
+    Compares the ticker's own buy-and-hold over the fetched window against the
+    benchmark's buy-and-hold over the same lookback, then scores + rates it with
+    the pure :func:`score_vs_benchmark`. Returns ``None`` on ANY failure (e.g.
+    the benchmark fetch is rate-limited) so the benchmark never breaks the
+    signal request. Runs inside the existing worker thread (the caller), so the
+    extra fetch does not touch the event loop.
+    """
+    try:
+        closes = df["Close"].tolist()
+        if len(closes) < 2 or not closes[0]:
+            return None
+        # The ticker's realized buy-and-hold over the window, as one "trade".
+        ticker_return = closes[-1] / closes[0] - 1.0
+
+        benchmark_closes = fetch_benchmark_closes(
+            index_symbol=DEFAULT_BENCHMARK, as_of=as_of, lookback_days=200
+        )
+        if len(benchmark_closes) < 2:
+            return None
+
+        scored = score_vs_benchmark([ticker_return], benchmark_closes)
+        return BenchmarkInfo(
+            index=DEFAULT_BENCHMARK,
+            benchmark_return_pct=scored["benchmark_total_return_pct"],
+            excess_return_pct=scored["excess_return_pct"],
+            rating=scored["rating"],
+        )
+    except Exception:  # noqa: BLE001 - benchmark is decoration; never fail here
+        return None
 
 
 @router.get(
