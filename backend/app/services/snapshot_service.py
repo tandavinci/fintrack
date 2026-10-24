@@ -87,12 +87,19 @@ def _headlines_payload(ticker: str, as_of: date) -> list[dict]:
     ]
 
 
-def build_and_store_snapshot(ticker: str, as_of: date) -> tuple[str, dict]:
+def build_and_store_snapshot(ticker: str, as_of: date, df=None) -> tuple[str, dict]:
     """Build and persist a point-in-time snapshot. Returns ``(snapshot_id, payload)``.
 
     Args:
         ticker: Non-empty symbol.
         as_of: The anchor ``date``.
+        df: Optional pre-built enriched daily frame. When provided, the snapshot
+            is hashed over THIS exact frame instead of re-fetching — so a caller
+            that also feeds the SAME frame into ``quant.recommend(..., df=df)``
+            guarantees the recommendation's ``snapshot_id`` matches the row this
+            writes (no cache-coincidence, no FK window on same-day runs — the
+            Step-2 design review's REQ-S2-2). When ``None`` (standalone calls)
+            the frame is fetched here as before, unchanged.
 
     Raises:
         ValueError: On an empty ticker, a non-``date`` ``as_of``, or an
@@ -105,13 +112,16 @@ def build_and_store_snapshot(ticker: str, as_of: date) -> tuple[str, dict]:
 
     # 1. Enriched daily frame via the SAME path quant/deep use (routed through
     #    MarketDataService by FEAT A). No cache: the snapshot is authoritative.
-    pipeline = DataPipeline(ticker=ticker, interval=SNAPSHOT_INTERVAL)
-    df = pipeline.get_enriched_data(
-        end_date=as_of.isoformat(),
-        interval=SNAPSHOT_INTERVAL,
-        lookback_days=SNAPSHOT_LOOKBACK_DAYS,
-        use_cache=False,
-    )
+    #    When the caller already built the frame, reuse it so the snapshot_id
+    #    hashes identical bytes to the lane's recommendation (REQ-S2-2).
+    if df is None:
+        pipeline = DataPipeline(ticker=ticker, interval=SNAPSHOT_INTERVAL)
+        df = pipeline.get_enriched_data(
+            end_date=as_of.isoformat(),
+            interval=SNAPSHOT_INTERVAL,
+            lookback_days=SNAPSHOT_LOOKBACK_DAYS,
+            use_cache=False,
+        )
     if df is None or getattr(df, "empty", True):
         raise ValueError("build_and_store_snapshot requires a non-empty data frame")
 

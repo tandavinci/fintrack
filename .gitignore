@@ -12,6 +12,7 @@ env/
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
 # Env & secrets
 .env
@@ -29,3 +30,9 @@ Thumbs.db
 # Agent workflow artifacts (FEAT task files, reviewer verdicts) — never committed
 .agents/
 gateway/logs/
+
+# Pranav's private scratch space — notes, reports, experiments (never tracked)
+pranav-local/
+
+# Code-review artifacts (local workflow output, like .agents/) — never tracked
+semantic-review/

@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.app.cache import close_redis
 from backend.app.config import settings
-from backend.app.routers import alerts, auth, dashboard, education, insights, portfolio, reports, stocks, websocket
+from backend.app.routers import alerts, auth, dashboard, education, insights, portfolio, quant_signal, reports, stocks, websocket
 from backend.app.utils.retry import CircuitBreakerError, ErrorResponse
 
 app = FastAPI(
@@ -156,6 +156,7 @@ app.include_router(reports.router)
 app.include_router(insights.router)
 app.include_router(education.router)
 app.include_router(websocket.router)
+app.include_router(quant_signal.router)  # G3: read-only live quant signal (no DB)
 
 
 # ---------------------------------------------------------------------------

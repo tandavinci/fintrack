@@ -2,6 +2,52 @@
 
 Format per STEERING §11. Newest week on top.
 
+## Week 4 (2026-10-22) — Step 3 quant-core productization (Gate G3)
+
+Current step / gate: Step 3 built on branch `feature/g3` (not yet merged to
+main). Gate G3 checks PASS. Worked by Pranav (new collaborator) with Kiro.
+
+Built:
+- Frontend from scratch (`frontend/`): Vite + React + TS + Tailwind + Recharts
+  Signals & Regime dashboard — colour-coded signal card (BUY/HOLD/SELL), regime
+  badge, price + SMA Recharts chart, evidence panel, and a benchmark card. Dark
+  "minimal but colourful" theme. Falls back to clearly-labelled sample data when
+  the backend is unreachable; auto-switches to live data when up.
+- Read-only endpoint `GET /api/quant/signal/{ticker}` (additive router
+  `backend/app/routers/quant_signal.py`; `main.py` got one import + one
+  include_router line). Runs the quant engine in a worker thread; no auth, no
+  new tables. Now also returns a best-effort `benchmark` block.
+- Persistence backbone: `RecommendationRecord` ORM (`recommendations` table) +
+  Alembic migration 003 (FK snapshot_id -> data_snapshots, unique
+  (ticker,as_of,source)); `RecommendationRepository` (async) +
+  `SyncRecommendationRepository` (sync, upsert); `persist_quant_recommendation`
+  service (snapshot-first, then quant recommend, then upsert).
+- Nightly fast-lane Celery task `app.tasks.quant_recommender.generate_nightly_signals`
+  on a new `quant` queue (task_routes + beat entry, post-market IST crontab),
+  iterating holdings + watchlist tickers.
+- Benchmark scoring `quant/backtesting/benchmark.py`: pure deterministic
+  `score_vs_benchmark` (strategy vs buy-and-hold on `^NSEI` Nifty 50, 1..5
+  rating) + an index-aware `fetch_benchmark_closes` (bypasses the stock `.BO`
+  resolution for `^`-prefixed index symbols — fixes the `^NSEI.BO` 404).
+
+Measured results:
+- Offline suite (`pytest -q -m "not integration"`): **66 passed, 4 skipped,
+  21 deselected** — stable across 3 consecutive runs.
+- Integration suite (real Postgres + Redis + yfinance): **21 passed** (was 17 at
+  G2; +4 new, G2 tests still green — no regression).
+- Gate G3: `tests/test_gate_g3.py` **2 integration passed** — rule-based
+  backtest reproducible (identical twice) and regime labels present for all 10
+  golden tickers; plus offline reproducibility + benchmark-scoring unit tests.
+- Frontend `npm run build`: success (tsc + vite; only the >500 kB chunk advisory).
+
+Open items / notes:
+- Docker Desktop on Pranav's laptop needed a reinstall before the DB stack came
+  up; a root `.env` (git-ignored, local dev creds) was added to drive the app.
+- Vite dev proxy must target `127.0.0.1:8000` not `localhost` (Windows IPv6
+  `::1` caused ECONNREFUSED).
+- yfinance bumped 0.2.40 -> 1.7.0 in the venv early on (TK independently shipped
+  the same pin on main); Pranav's branch keeps main's requirements.txt.
+
 ## Week 3 (2026-10-21) — Step 2 data unification (FEAT-001 … FEAT-005)
 
 Current step / gate: Step 2 built, committed, reviewed (APPROVED), and pushed to

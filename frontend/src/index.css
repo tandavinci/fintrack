@@ -1,0 +1,27 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-canvas text-slate-100 antialiased;
+    /* Subtle colourful glow in the corners — minimal canvas, hint of colour. */
+    background-image:
+      radial-gradient(60rem 60rem at 110% -10%, rgba(99, 102, 241, 0.12), transparent 60%),
+      radial-gradient(50rem 50rem at -10% 110%, rgba(34, 211, 238, 0.1), transparent 60%);
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-surface/70 backdrop-blur-xl border border-border/80;
+  }
+}
