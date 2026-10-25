@@ -15,14 +15,13 @@ offline suite stays green on a bare machine.
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from backend.app.schemas.snapshot import compute_snapshot_id
+from backend.app.schemas.snapshot import SNAPSHOT_TAIL_N, compute_snapshot_id
 from deep import adapter
 from deep.adapter import analyze
 from quant.data.indicators import TechnicalIndicators
@@ -81,25 +80,6 @@ def test_golden_feeds_quant_and_deep_to_one_snapshot_id(monkeypatch):
     the SAME ``compute_snapshot_id`` across both lanes (no network)."""
     files = _require_fixtures()
 
-    def _fake_generate_sync(prompt, **kwargs):
-        # A schema-valid, number-clean deep Recommendation (actions/figures from
-        # the snapshot). The number-check only inspects rationale/evidence, so a
-        # figure-free rationale always passes.
-        rec = {
-            "ticker": "GOLDEN",
-            "as_of": AS_OF.isoformat(),
-            "action": "HOLD",
-            "confidence": 0.5,
-            "horizon_days": 10,
-            "rationale": "Signals are mixed; hold.",
-            "evidence": ["trend neutral"],
-            "source": "deep",
-            "snapshot_id": "placeholder",
-        }
-        return {"text": json.dumps(rec), "valid": True, "model_id": "llama3.2"}
-
-    monkeypatch.setattr(adapter, "generate_sync", _fake_generate_sync)
-
     for path in files:
         raw = pd.read_parquet(path, engine="pyarrow")
         enriched = _enriched(raw)
@@ -112,6 +92,33 @@ def test_golden_feeds_quant_and_deep_to_one_snapshot_id(monkeypatch):
             "quant.data.pipeline.DataPipeline.get_enriched_data",
             lambda self, *a, **k: enriched,
         )
+
+        # Provenance TA-closes = OUR tail (match), and a fake graph whose reports
+        # cite only a snapshot-backed figure (the last close) so the evidence and
+        # number-check gates pass offline, without the real graph or Ollama.
+        tail = enriched.tail(SNAPSHOT_TAIL_N)
+        series = pd.Series(tail["Close"].values, index=tail.index, dtype=float)
+        monkeypatch.setattr(adapter, "get_closes", lambda *a, **k: series)
+
+        summary = TechnicalIndicators.summarize(enriched)
+        current = summary["price"]["current"]
+        final_state = {
+            "market_report": f"Price sits near {current}.",
+            "news_report": f"Coverage steady; price around {current}.",
+            "fundamentals_report": "",
+            "sentiment_report": "",
+            "final_trade_decision": f"Hold near {current}.",
+            "final_rating": None,
+        }
+
+        class _FakeGraph:
+            def __init__(self, *a, **k):
+                pass
+
+            def propagate(self, *a, **k):
+                return final_state, "Hold"
+
+        monkeypatch.setattr(adapter, "TradingAgentsGraph", _FakeGraph)
 
         quant_rec = recommend("GOLDEN", AS_OF, df=enriched)
         deep_rec = analyze("GOLDEN", AS_OF)
