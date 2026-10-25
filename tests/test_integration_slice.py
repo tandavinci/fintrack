@@ -1,9 +1,12 @@
 """Offline integration test for the slice (design 7.2).
 
-No network / no Ollama: the quant ``DataPipeline`` fetch is replaced by a
-synthetic enriched daily frame and the deep gateway call is stubbed to a
-schema-valid, number-clean Recommendation JSON. Both lanes run on the SAME
-synthetic daily snapshot so the two contracts can be compared end to end:
+No network / no Ollama / no real graph: the quant ``DataPipeline`` fetch is
+replaced by a synthetic enriched daily frame, the deep provenance TA-closes
+fetch (``get_closes``) returns OUR tail so provenance matches, and the
+TradingAgents graph is replaced by a fake whose ``.propagate`` returns a canned
+``(final_state, signal)`` carrying snapshot-backed figures. Both lanes run on
+the SAME synthetic daily snapshot so the two contracts can be compared end to
+end:
 
   * both lanes compute the SAME ``snapshot_id`` (one ``compute_snapshot_id``),
   * ``fuse([quant_rec, deep_rec])`` returns BOTH objects verbatim and flags the
@@ -13,14 +16,13 @@ synthetic daily snapshot so the two contracts can be compared end to end:
 
 from __future__ import annotations
 
-import json
 from datetime import date
 
 import numpy as np
 import pandas as pd
 
 from backend.app.schemas.fusion import fuse
-from backend.app.schemas.snapshot import compute_snapshot_id
+from backend.app.schemas.snapshot import SNAPSHOT_TAIL_N, compute_snapshot_id
 from deep import adapter
 from deep.adapter import analyze
 from quant.data.indicators import TechnicalIndicators
@@ -64,35 +66,37 @@ def _patch_pipeline(monkeypatch, enriched: pd.DataFrame) -> None:
     )
 
 
-def _patch_gateway(monkeypatch, rec_dict: dict) -> None:
-    """Stub the deep gateway call to a schema-valid, number-clean response."""
+def _patch_deep_graph(monkeypatch, enriched: pd.DataFrame, *, signal: str) -> None:
+    """Stub the deep lane's graph + provenance so ``analyze`` runs fully offline.
 
-    def _fake_generate_sync(prompt, **kwargs):
-        return {
-            "text": json.dumps(rec_dict),
-            "valid": True,
-            "model_id": "llama3.2",
-        }
+    ``get_closes`` returns OUR snapshot tail (provenance matches), and a fake
+    ``TradingAgentsGraph`` returns reports that cite only snapshot-backed figures
+    with the requested 5-tier ``signal``.
+    """
+    tail = enriched.tail(SNAPSHOT_TAIL_N)
+    series = pd.Series(tail["Close"].values, index=tail.index, dtype=float)
+    monkeypatch.setattr(adapter, "get_closes", lambda *a, **k: series)
 
-    monkeypatch.setattr(adapter, "generate_sync", _fake_generate_sync)
-
-
-def _deep_rec_dict(enriched: pd.DataFrame, *, action: str) -> dict:
-    """A deep Recommendation JSON whose figures all exist in the snapshot."""
     summary = TechnicalIndicators.summarize(enriched)
     rsi = summary["momentum"]["RSI"]
     current = summary["price"]["current"]
-    return {
-        "ticker": "TEST",
-        "as_of": AS_OF.isoformat(),
-        "action": action,
-        "confidence": 0.66,
-        "horizon_days": 10,
-        "rationale": f"RSI sits at {rsi} with price near {current}.",
-        "evidence": [f"RSI={rsi}", f"price.current={current}"],
-        "source": "deep",
-        "snapshot_id": "placeholder",
+    final_state = {
+        "market_report": f"RSI sits at {rsi} with price near {current}.",
+        "news_report": f"Context stable; price around {current}.",
+        "fundamentals_report": "",
+        "sentiment_report": "",
+        "final_trade_decision": f"RSI {rsi} near price {current} informs the call.",
+        "final_rating": None,
     }
+
+    class _FakeGraph:
+        def __init__(self, *a, **k):
+            pass
+
+        def propagate(self, company_name, trade_date, asset_type="stock", portfolio=None):
+            return final_state, signal
+
+    monkeypatch.setattr(adapter, "TradingAgentsGraph", _FakeGraph)
 
 
 def test_both_lanes_share_one_snapshot_id(monkeypatch):
@@ -100,7 +104,7 @@ def test_both_lanes_share_one_snapshot_id(monkeypatch):
     ``snapshot_id`` (one ``compute_snapshot_id``)."""
     enriched = _enriched_daily()
     _patch_pipeline(monkeypatch, enriched)
-    _patch_gateway(monkeypatch, _deep_rec_dict(enriched, action="BUY"))
+    _patch_deep_graph(monkeypatch, enriched, signal="Buy")
 
     quant_rec = recommend("TEST", AS_OF, df=enriched)
     deep_rec = analyze("TEST", AS_OF)
@@ -115,9 +119,9 @@ def test_fuse_conflict_true_keeps_both_when_actions_differ(monkeypatch):
     _patch_pipeline(monkeypatch, enriched)
 
     quant_rec = recommend("TEST", AS_OF, df=enriched)
-    # The engineered uptrend is a quant BUY; make deep disagree with a SELL.
+    # The engineered uptrend is a quant BUY; make deep disagree with a Sell.
     assert quant_rec.action.value == "BUY"
-    _patch_gateway(monkeypatch, _deep_rec_dict(enriched, action="SELL"))
+    _patch_deep_graph(monkeypatch, enriched, signal="Sell")
     deep_rec = analyze("TEST", AS_OF)
 
     fused = fuse([quant_rec, deep_rec])
@@ -127,10 +131,9 @@ def test_fuse_conflict_true_keeps_both_when_actions_differ(monkeypatch):
     assert fused["recommendations"] == [quant_rec, deep_rec]
     assert fused["recommendations"][0] is quant_rec
     assert fused["recommendations"][1] is deep_rec
-    # Actions/confidence unchanged — nothing averaged.
+    # Actions unchanged — nothing averaged.
     assert quant_rec.action.value == "BUY"
     assert deep_rec.action.value == "SELL"
-    assert deep_rec.confidence == 0.66
 
 
 def test_fuse_conflict_false_keeps_both_when_actions_agree(monkeypatch):
@@ -140,7 +143,7 @@ def test_fuse_conflict_false_keeps_both_when_actions_agree(monkeypatch):
 
     quant_rec = recommend("TEST", AS_OF, df=enriched)
     assert quant_rec.action.value == "BUY"
-    _patch_gateway(monkeypatch, _deep_rec_dict(enriched, action="BUY"))
+    _patch_deep_graph(monkeypatch, enriched, signal="Buy")
     deep_rec = analyze("TEST", AS_OF)
 
     fused = fuse([quant_rec, deep_rec])
@@ -149,5 +152,7 @@ def test_fuse_conflict_false_keeps_both_when_actions_agree(monkeypatch):
     assert fused["recommendations"] == [quant_rec, deep_rec]
     assert fused["recommendations"][0] is quant_rec
     assert fused["recommendations"][1] is deep_rec
-    # Confidence values preserved independently — not collapsed to one number.
-    assert quant_rec.confidence != deep_rec.confidence
+    # Confidence values preserved independently — each lane keeps its own
+    # number, nothing collapsed. Deep's confidence is its rating-tier value.
+    assert deep_rec.confidence == 0.8
+    assert quant_rec.confidence == quant_rec.confidence  # untouched by fuse

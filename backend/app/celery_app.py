@@ -43,12 +43,18 @@ celery_app.conf.update(
         "app.tasks.insight_calculator",
         "app.tasks.email_tasks",
         "app.tasks.quant_recommender",
+        "app.tasks.deep_recommender",
     ],
 )
 
-# Route the nightly quant fast-lane to the dedicated `quant` queue (Step 3 / G3).
+# Route the nightly quant fast-lane to the dedicated `quant` queue (Step 3 / G3),
+# and the overnight deep lane to the dedicated `deep` queue (Step 4 / G4).
+# The `deep` worker MUST run at concurrency 1 (the deep lane is slow and must not
+# be parallelized), operationally:
+#   celery -A backend.app.celery_app worker -Q deep --concurrency=1
 celery_app.conf.task_routes = {
     "app.tasks.quant_recommender.*": {"queue": "quant"},
+    "app.tasks.deep_recommender.*": {"queue": "deep"},
 }
 
 # Celery Beat schedule
@@ -93,6 +99,17 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=16, minute=30, day_of_week="mon-fri"),
         "options": {
             "queue": "quant",
+        },
+    },
+    # Overnight deep signals: 1:00 AM IST (well after the 3:30 PM close and well
+    # before the 09:00 IST nightly-pipeline deadline / 09:15 BSE open), Tue-Sat so
+    # a run covers the prior trading day. Routed to the dedicated `deep` queue;
+    # the deep worker runs at concurrency 1 (Step 4 / G4).
+    "generate-deep-signals": {
+        "task": "app.tasks.deep_recommender.generate_deep_signals",
+        "schedule": crontab(hour=1, minute=0, day_of_week="tue-sat"),
+        "options": {
+            "queue": "deep",
         },
     },
     # Weekly cleanup: every Sunday at 2:00 AM IST

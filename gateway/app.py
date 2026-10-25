@@ -14,7 +14,7 @@ request produces NO log line.
 from __future__ import annotations
 
 import anyio
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from gateway import client
 from gateway.schemas import (
@@ -82,3 +82,40 @@ async def deep(req: GenerateRequest) -> GenerateResponse:
 async def embed(req: EmbedRequest) -> EmbedResponse:
     result = await anyio.to_thread.run_sync(lambda: client.embed(req.input))
     return EmbedResponse(**result)
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(request: Request) -> dict:
+    """OpenAI-compatible chat-completions pass-through (Step 4 / G4).
+
+    TradingAgents sends a full OpenAI body with many optional fields (notably
+    ``tools``), so we read the raw JSON permissively — over-constraining it
+    would drop fields. The blocking Ollama call is offloaded via
+    ``anyio.to_thread.run_sync`` so it shares the SAME priority gate as the
+    other routes. Ollama's response (choices/tool_calls/usage) is returned
+    unchanged.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="invalid_json_body")
+
+    # Minimal validation BEFORE any model call (no log line for a rejected
+    # request, matching design 2.8).
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="invalid_json_body")
+    if not payload.get("model"):
+        raise HTTPException(status_code=422, detail="model_required")
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise HTTPException(status_code=422, detail="messages_required")
+
+    try:
+        result = await anyio.to_thread.run_sync(
+            lambda: client.chat_completion(payload)
+        )
+    except client.GatewayUnavailable:
+        raise HTTPException(status_code=503, detail="ollama_unreachable")
+    except client.GatewayHTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"ollama_http_{exc.status_code}")
+    return result

@@ -310,6 +310,132 @@ generate = generate_sync
 
 
 # ---------------------------------------------------------------------------
+# OpenAI-compatible chat completions pass-through (Step 4 / G4).
+# ---------------------------------------------------------------------------
+# TradingAgents speaks the OpenAI Chat Completions wire format (via langchain's
+# ChatOpenAI). Ollama already exposes its OWN OpenAI-compatible endpoint at
+# {OLLAMA_BASE_URL}/v1/chat/completions WITH tool-calling, so this is a THIN
+# pass-through proxy: we do not reimplement chat-completions or tool-calling.
+# We only (1) keep the gateway the single choke point that talks to Ollama,
+# (2) inject the hard num_ctx cap via the `options` object, and (3) log the
+# call. Ollama's JSON response (choices, tool_calls, usage) is returned verbatim.
+def _ollama_chat_completion(payload: dict[str, Any]) -> dict[str, Any]:
+    """One POST to Ollama's OpenAI-compatible /v1/chat/completions. Raises
+    GatewayUnavailable / GatewayHTTPError on transport/status failures."""
+    url = f"{settings.OLLAMA_BASE_URL}/v1/chat/completions"
+    try:
+        resp = httpx.post(url, json=payload, timeout=settings.GATEWAY_REQUEST_TIMEOUT_S)
+    except httpx.RequestError as exc:  # connection error / timeout
+        raise GatewayUnavailable(str(exc)) from exc
+    if resp.status_code >= 400:
+        raise GatewayHTTPError(resp.status_code)
+    return resp.json()
+
+
+def _messages_sha256(messages: Any) -> str:
+    """Stable sha256 of the messages list (content is never logged, only its
+    hash). Falls back to str() if the body is not JSON-serializable."""
+    import json
+
+    try:
+        serialized = json.dumps(messages, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        serialized = str(messages)
+    return prompt_sha256(serialized)
+
+
+def chat_completion(payload: dict[str, Any]) -> dict[str, Any]:
+    """Proxy an OpenAI-format chat-completions request through to Ollama.
+
+    ``payload`` is a parsed OpenAI chat-completions body (at least ``model`` and
+    ``messages``; optionally ``tools``, ``tool_choice``, ``temperature``,
+    ``max_tokens`` etc.). This forwards it to Ollama's OpenAI endpoint,
+    injecting the hard ``num_ctx`` cap via ``options.num_ctx`` (the single
+    enforcement point) and forcing ``stream=False``, logs one call, and returns
+    Ollama's JSON response UNCHANGED so ``tool_calls``/``choices``/``usage``
+    pass through to the caller.
+
+    Serializes against the SAME priority gate as /deep: one Ollama request runs
+    at a time and interactive /quick preempts.
+
+    Raises GatewayUnavailable / GatewayHTTPError, matching the other calls.
+    """
+    num_ctx = _effective_num_ctx()
+    model_id = payload.get("model") or settings.GATEWAY_MODEL
+    phash = _messages_sha256(payload.get("messages"))
+
+    # Build the forwarded request as a shallow copy so we never mutate the
+    # caller's dict. Inject the num_ctx cap into the `options` object (Ollama's
+    # OpenAI endpoint honors it) and force a single, non-streamed JSON reply.
+    forwarded: dict[str, Any] = dict(payload)
+    forwarded["stream"] = False
+    options = dict(forwarded.get("options") or {})
+    options["num_ctx"] = num_ctx
+    forwarded["options"] = options
+
+    # Treat a chat completion like a /deep-priority call: yield while any
+    # /quick is queued or in flight (mirror generate_sync's deep branch).
+    with _priority_cv:
+        _priority_cv.wait_for(lambda: _quick_waiting == 0)
+
+    start = time.perf_counter()
+    with _ollama_lock:
+        try:
+            data = _ollama_chat_completion(forwarded)
+        except GatewayUnavailable:
+            latency_ms = int((time.perf_counter() - start) * 1000)
+            log_call(
+                settings.GATEWAY_LOG_PATH,
+                route="chat",
+                model_id=model_id,
+                prompt_sha256=phash,
+                num_ctx=num_ctx,
+                eval_count=None,
+                prompt_eval_count=None,
+                latency_ms=latency_ms,
+                attempts=1,
+                valid=False,
+                error="ollama_unreachable",
+            )
+            raise
+        except GatewayHTTPError as exc:
+            latency_ms = int((time.perf_counter() - start) * 1000)
+            log_call(
+                settings.GATEWAY_LOG_PATH,
+                route="chat",
+                model_id=model_id,
+                prompt_sha256=phash,
+                num_ctx=num_ctx,
+                eval_count=None,
+                prompt_eval_count=None,
+                latency_ms=latency_ms,
+                attempts=1,
+                valid=False,
+                error=f"ollama_http_{exc.status_code}",
+            )
+            raise
+
+    latency_ms = int((time.perf_counter() - start) * 1000)
+    usage = data.get("usage") or {}
+    prompt_eval_count = usage.get("prompt_tokens")
+    eval_count = usage.get("completion_tokens")
+    log_call(
+        settings.GATEWAY_LOG_PATH,
+        route="chat",
+        model_id=model_id,
+        prompt_sha256=phash,
+        num_ctx=num_ctx,
+        eval_count=int(eval_count) if eval_count is not None else None,
+        prompt_eval_count=int(prompt_eval_count) if prompt_eval_count is not None else None,
+        latency_ms=latency_ms,
+        attempts=1,
+        valid=True,
+        error=None,
+    )
+    return data
+
+
+# ---------------------------------------------------------------------------
 # Embeddings (design 2.6).
 # ---------------------------------------------------------------------------
 def _hash_embed_one(text: str) -> list[float]:

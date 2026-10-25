@@ -5,6 +5,7 @@ Import all models here so Alembic can discover them via Base.metadata.
 
 from backend.app.models.alert import Alert, AlertTypeEnum
 from backend.app.models.data_snapshot import DataSnapshot
+from backend.app.models.deep_memory import DeepMemoryEntry
 from backend.app.models.education import DifficultyEnum, EducationModule, EducationProgress
 from backend.app.models.insight import InsightScore, InsightSignalEnum
 from backend.app.models.news_item import NewsItem
@@ -18,6 +19,7 @@ __all__ = [
     "Alert",
     "AlertTypeEnum",
     "DataSnapshot",
+    "DeepMemoryEntry",
     "DifficultyEnum",
     "EducationModule",
     "EducationProgress",
