@@ -30,8 +30,9 @@ from datetime import date
 
 from backend.app.repositories.recommendation_repository import SyncRecommendationRepository
 from backend.app.schemas.recommendation import Recommendation
+from backend.app.services.deep_memory_service import mirror_memory_for_ticker
 from backend.app.services.snapshot_service import build_and_store_snapshot
-from deep.adapter import analyze
+from deep.adapter import analyze, deep_memory_log_path
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,16 @@ def persist_deep_recommendation(
 
     # 3. Upsert keyed on (ticker, as_of, source).
     SyncRecommendationRepository().save(rec)
+
+    # 4. Write-as-you-go memory mirror: copy THIS ticker's entries from
+    #    TradingAgents' own markdown log into deep_memory (cheap — a few rows).
+    #    A mirror failure must NEVER fail the recommendation (STEERING: the
+    #    markdown remains the backup export), so isolate it here.
+    try:
+        mirrored = mirror_memory_for_ticker(deep_memory_log_path(), ticker)
+        logger.info("mirrored %d deep_memory entries for %s", mirrored, ticker)
+    except Exception as exc:  # noqa: BLE001 — mirror is best-effort
+        logger.warning("deep_memory mirror failed for %s: %s", ticker, exc)
 
     logger.info(
         "persisted deep recommendation %s %s action=%s snapshot=%s",

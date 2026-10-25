@@ -67,11 +67,40 @@ def test_persist_deep_recommendation_order_and_return(monkeypatch):
     monkeypatch.setattr(deep_service, "build_and_store_snapshot", fake_snapshot)
     monkeypatch.setattr(deep_service, "analyze", fake_analyze)
     monkeypatch.setattr(deep_service, "SyncRecommendationRepository", lambda: FakeRepo())
+    monkeypatch.setattr(deep_service, "deep_memory_log_path", lambda: "/tmp/mem.md")
+    monkeypatch.setattr(
+        deep_service, "mirror_memory_for_ticker", lambda path, ticker: calls.append("mirror")
+    )
 
     result = deep_service.persist_deep_recommendation("RELIANCE.NS", AS_OF)
 
-    # snapshot MUST be built before analyze (FK safety), save last.
-    assert calls == ["snapshot", "analyze", "save"]
+    # snapshot before analyze (FK safety), save, then the write-as-you-go mirror.
+    assert calls == ["snapshot", "analyze", "save", "mirror"]
+    assert result is rec
+
+
+def test_persist_deep_recommendation_mirror_failure_does_not_propagate(monkeypatch):
+    """A failing memory mirror must NOT fail the recommendation (best-effort)."""
+    from backend.app.services import deep_service
+
+    rec = _canned_rec("RELIANCE.NS")
+
+    monkeypatch.setattr(
+        deep_service, "build_and_store_snapshot", lambda *a, **k: ("x", {})
+    )
+    monkeypatch.setattr(deep_service, "analyze", lambda *a, **k: rec)
+    monkeypatch.setattr(
+        deep_service, "SyncRecommendationRepository", lambda: type("R", (), {"save": lambda self, r: None})()
+    )
+    monkeypatch.setattr(deep_service, "deep_memory_log_path", lambda: "/tmp/mem.md")
+
+    def boom(path, ticker):
+        raise RuntimeError("mirror DB down")
+
+    monkeypatch.setattr(deep_service, "mirror_memory_for_ticker", boom)
+
+    # Must return the recommendation despite the mirror raising.
+    result = deep_service.persist_deep_recommendation("RELIANCE.NS", AS_OF)
     assert result is rec
 
 

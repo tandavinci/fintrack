@@ -72,6 +72,22 @@ from quant.data.pipeline import DataPipeline
 # the single-gateway-call stub).
 DEEP_PROMPT_VERSION = "deep-v2"
 
+# Local scratch root for a TradingAgents run's artifacts (logs/cache/memory),
+# kept out of the user home and out of git. ``_build_run_config`` points
+# results_dir/data_cache_dir/memory_log_path under here so a run is consistent
+# and self-contained.
+_TA_ROOT = os.path.join(tempfile.gettempdir(), "fintrack_ta")
+
+
+def deep_memory_log_path() -> str:
+    """The memory-log markdown path a deep run writes to (and the mirror reads).
+
+    Single source of truth for the path so the service layer can construct a
+    ``TradingMemoryLog`` over the EXACT file a run used, without duplicating the
+    join. This is config-only (STEERING rule 2) and stays free of DB/web imports.
+    """
+    return os.path.join(_TA_ROOT, "memory", "trading_memory.md")
+
 # Default horizon for a deep recommendation, mirroring the quant lane's
 # HORIZON_DAYS so both lanes anchor to the same forward window (design 4.2h).
 HORIZON_DAYS = 10
@@ -178,9 +194,13 @@ def _build_run_config() -> dict:
     # Keep a run's artifacts out of the user home and out of git (STEERING
     # rule: do not hardcode the user profile path). A repo-independent local
     # scratch dir under the OS temp root.
-    ta_root = os.path.join(tempfile.gettempdir(), "fintrack_ta")
+    ta_root = _TA_ROOT
     config["results_dir"] = os.path.join(ta_root, "logs")
     config["data_cache_dir"] = os.path.join(ta_root, "cache")
+    # Mirror target: pin the memory log under the same scratch root (NOT the
+    # DEFAULT_CONFIG ~/.tradingagents default) so the mirror reads the exact
+    # file a run wrote. Still config-only — TradingAgents source is untouched.
+    config["memory_log_path"] = deep_memory_log_path()
 
     return config
 
