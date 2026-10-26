@@ -352,3 +352,84 @@ export async function fetchBacktest(ticker: string): Promise<BacktestReport> {
   }
   return (await res.json()) as BacktestReport;
 }
+
+/* -------------------------------------------------------------------------- */
+/* G5: Advisor chat (grounded in stored holdings + recommendations)           */
+/* -------------------------------------------------------------------------- */
+
+/** One prior turn replayed to the advisor for continuity. */
+export interface AdvisorTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** Provenance: how many stored facts the answer was grounded on. */
+export interface GroundedOn {
+  holdings: number;
+  recommendations: number;
+}
+
+/** The advisor's grounded reply (mirrors backend AdvisorAnswer). */
+export interface AdvisorAnswer {
+  answer: string;
+  grounded_on: GroundedOn;
+}
+
+/**
+ * The reason an advisor call did not return an answer, so the chat UI can
+ * degrade gracefully instead of throwing:
+ *   - "unauthenticated": no/invalid token (the demo frontend has no auth UI yet)
+ *   - "model_unavailable": the local model/gateway is down (backend 503)
+ *   - "error": any other failure
+ */
+export type AdvisorFailureKind =
+  | "unauthenticated"
+  | "model_unavailable"
+  | "error";
+
+/** A discriminated result so the page can render the right friendly state. */
+export type AdvisorResult =
+  | { ok: true; data: AdvisorAnswer }
+  | { ok: false; kind: AdvisorFailureKind; detail?: string };
+
+/**
+ * Ask the grounded advisor a question about the stored portfolio.
+ *
+ * The endpoint is auth-guarded (POST /api/v1/advisor/chat). The demo frontend
+ * has no auth plumbing yet, so a 401/403 is surfaced as a friendly
+ * "unauthenticated" result (sign-in note) rather than an error, and a backend
+ * 503 as "model_unavailable". Never throws — always returns an AdvisorResult.
+ */
+export async function askAdvisor(
+  question: string,
+  history?: AdvisorTurn[]
+): Promise<AdvisorResult> {
+  try {
+    const res = await fetch("/api/v1/advisor/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, history: history ?? null }),
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, kind: "unauthenticated" };
+    }
+    if (res.status === 503) {
+      return { ok: false, kind: "model_unavailable" };
+    }
+    if (!res.ok) {
+      let detail = `Request failed (${res.status})`;
+      try {
+        const body = await res.json();
+        if (body?.detail) detail = String(body.detail);
+      } catch {
+        /* non-JSON error body; keep the default message */
+      }
+      return { ok: false, kind: "error", detail };
+    }
+    const data = (await res.json()) as AdvisorAnswer;
+    return { ok: true, data };
+  } catch {
+    // Network/backend down — treat as a generic error the page can show.
+    return { ok: false, kind: "error", detail: "Could not reach the advisor." };
+  }
+}

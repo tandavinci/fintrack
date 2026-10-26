@@ -1,17 +1,19 @@
 import { useState } from "react";
-import { Activity, FlaskConical, LineChart, MessagesSquare, Server } from "lucide-react";
+import { Activity, Bot, FlaskConical, LineChart, MessagesSquare, Server } from "lucide-react";
 import { GOLDEN_TICKERS } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { SignalsPage } from "@/pages/SignalsPage";
 import { ModelStatusPage } from "@/pages/ModelStatusPage";
 import { AgentDebatePage } from "@/pages/AgentDebatePage";
 import { BacktestLabPage } from "@/pages/BacktestLabPage";
+import { AdvisorPage } from "@/pages/AdvisorPage";
 
 /** The views the nav shell switches between (no router — a simple state switch). */
-type View = "signals" | "model" | "debate" | "backtest";
+type View = "signals" | "advisor" | "model" | "debate" | "backtest";
 
 const NAV: { id: View; label: string; Icon: typeof Activity }[] = [
   { id: "signals", label: "Signals", Icon: LineChart },
+  { id: "advisor", label: "Advisor", Icon: Bot },
   { id: "model", label: "Model Status", Icon: Server },
   { id: "debate", label: "Agent Debate", Icon: MessagesSquare },
   { id: "backtest", label: "Backtest Lab", Icon: FlaskConical },
@@ -32,6 +34,7 @@ export default function App() {
         {view === "signals" && (
           <SignalsPage ticker={ticker} onTicker={setTicker} />
         )}
+        {view === "advisor" && <AdvisorPage />}
         {view === "model" && <ModelStatusPage />}
         {view === "debate" && (
           <AgentDebatePage ticker={ticker} onTicker={setTicker} />
