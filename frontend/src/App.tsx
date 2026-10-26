@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Activity, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import { Info } from "lucide-react";
 import {
+  fetchFusion,
   fetchSignal,
   GOLDEN_TICKERS,
+  type FusionResponse,
   type SignalResponse,
 } from "@/lib/api";
 import { TickerSelect } from "@/components/ui/TickerSelect";
@@ -12,10 +14,12 @@ import { RegimeBadge } from "@/components/RegimeBadge";
 import { BenchmarkCard } from "@/components/BenchmarkCard";
 import { PriceChart } from "@/components/PriceChart";
 import { EvidencePanel } from "@/components/EvidencePanel";
+import { FusionView } from "@/components/FusionView";
 
 export default function App() {
   const [ticker, setTicker] = useState<string>(GOLDEN_TICKERS[0]);
   const [data, setData] = useState<SignalResponse | null>(null);
+  const [fusion, setFusion] = useState<FusionResponse | null>(null);
   const [isSample, setIsSample] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +36,15 @@ export default function App() {
       setData(null);
     } finally {
       setLoading(false);
+    }
+    // The fusion view reads the STORED recommendations table independently of
+    // the live signal. It is optional decoration: null (no stored recs yet)
+    // and any fetch failure both collapse to "no stored recs" rather than
+    // failing the page.
+    try {
+      setFusion(await fetchFusion(t));
+    } catch {
+      setFusion(null);
     }
   }, []);
 
@@ -75,6 +88,13 @@ export default function App() {
             </div>
             <div className="lg:col-span-1">
               <EvidencePanel evidence={data.recommendation.evidence} />
+            </div>
+            <div className="lg:col-span-3">
+              {fusion ? (
+                <FusionView fusion={fusion} />
+              ) : (
+                <NoFusionNote />
+              )}
             </div>
           </div>
         )}
@@ -143,6 +163,18 @@ function SampleBanner() {
         The dashboard below uses a fixed sample so you can see the UI. It will
         switch to live data automatically once the backend is up.
       </p>
+    </div>
+  );
+}
+
+function NoFusionNote() {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-2/40 px-4 py-3 text-xs text-muted">
+      <Info className="h-4 w-4 shrink-0" />
+      <span>
+        No stored recommendations yet — run the nightly jobs to populate the
+        quant vs deep view.
+      </span>
     </div>
   );
 }

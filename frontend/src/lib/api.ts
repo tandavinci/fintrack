@@ -102,6 +102,44 @@ export async function fetchSignal(ticker: string): Promise<SignalResult> {
   }
 }
 
+/**
+ * Latest stored quant + deep recommendations for a ticker, side by side.
+ * Mirrors backend FusionResponse (GET /api/fusion/{ticker}). Either source may
+ * be null (deep is absent until the overnight run); conflict is true only when
+ * both are present and their actions disagree. We NEVER average — both verbatim.
+ */
+export interface FusionResponse {
+  ticker: string;
+  quant: Recommendation | null;
+  deep: Recommendation | null;
+  conflict: boolean;
+}
+
+/**
+ * Fetch the stored recommendation fusion for a ticker.
+ *
+ * Returns null on 404 ("no stored recommendations yet") — that is a NORMAL
+ * empty state (the nightly jobs haven't populated the table), not an error.
+ * Any other failure throws so the caller can surface it.
+ */
+export async function fetchFusion(
+  ticker: string
+): Promise<FusionResponse | null> {
+  const res = await fetch(`/api/fusion/${encodeURIComponent(ticker)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      /* non-JSON error body; keep the default message */
+    }
+    throw new ApiError(detail, res.status);
+  }
+  return (await res.json()) as FusionResponse;
+}
+
 /** The 10 golden tickers (6 .NS + 4 .BO) from tests/golden/. */
 export const GOLDEN_TICKERS = [
   "RELIANCE.NS",
