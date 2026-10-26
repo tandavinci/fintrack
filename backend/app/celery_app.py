@@ -44,6 +44,7 @@ celery_app.conf.update(
         "app.tasks.email_tasks",
         "app.tasks.quant_recommender",
         "app.tasks.deep_recommender",
+        "app.tasks.signal_alerter",
     ],
 )
 
@@ -110,6 +111,18 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=1, minute=0, day_of_week="tue-sat"),
         "options": {
             "queue": "deep",
+        },
+    },
+    # System-generated signal alerts: 7:00 AM IST — AFTER the overnight deep run
+    # (1:00 AM) and the nightly quant lane, and BEFORE the 09:00 IST pipeline
+    # deadline / 09:15 BSE open. It reads the stored pipeline output (quant recs,
+    # price bars, news) and is light/fast, so it runs on the DEFAULT queue (NOT
+    # the slow `deep` queue). Tue-Sat so it follows the deep run's days.
+    "generate-signal-alerts": {
+        "task": "app.tasks.signal_alerter.generate_signal_alerts",
+        "schedule": crontab(hour=7, minute=0, day_of_week="tue-sat"),
+        "options": {
+            "expires": 3600,
         },
     },
     # Weekly cleanup: every Sunday at 2:00 AM IST

@@ -4,8 +4,10 @@ import { Info } from "lucide-react";
 import {
   fetchFusion,
   fetchSignal,
+  fetchSignalAlerts,
   GOLDEN_TICKERS,
   type FusionResponse,
+  type SignalAlert,
   type SignalResponse,
 } from "@/lib/api";
 import { TickerSelect } from "@/components/ui/TickerSelect";
@@ -15,11 +17,13 @@ import { BenchmarkCard } from "@/components/BenchmarkCard";
 import { PriceChart } from "@/components/PriceChart";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { FusionView } from "@/components/FusionView";
+import { AlertsPanel } from "@/components/AlertsPanel";
 
 export default function App() {
   const [ticker, setTicker] = useState<string>(GOLDEN_TICKERS[0]);
   const [data, setData] = useState<SignalResponse | null>(null);
   const [fusion, setFusion] = useState<FusionResponse | null>(null);
+  const [alerts, setAlerts] = useState<SignalAlert[]>([]);
   const [isSample, setIsSample] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +49,15 @@ export default function App() {
       setFusion(await fetchFusion(t));
     } catch {
       setFusion(null);
+    }
+    // System-generated alerts (AI/RISK/NEWS) from the nightly run. Read-only,
+    // optional decoration: any failure / empty collapses to the panel's own
+    // empty state and never fails the page. fetchSignalAlerts already returns
+    // [] on error, so this is belt-and-braces.
+    try {
+      setAlerts(await fetchSignalAlerts({ limit: 20 }));
+    } catch {
+      setAlerts([]);
     }
   }, []);
 
@@ -95,6 +108,9 @@ export default function App() {
               ) : (
                 <NoFusionNote />
               )}
+            </div>
+            <div className="lg:col-span-3">
+              <AlertsPanel alerts={alerts} />
             </div>
           </div>
         )}

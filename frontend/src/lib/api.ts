@@ -153,3 +153,57 @@ export const GOLDEN_TICKERS = [
   "YESBANK.BO",
   "IDEA.BO",
 ] as const;
+
+/** The kind of a system-generated alert. */
+export type AlertKind = "AI" | "RISK" | "NEWS";
+
+/** The severity of a system-generated alert. */
+export type AlertSeverity = "info" | "warning" | "critical";
+
+/**
+ * One system-generated signal alert. Mirrors backend SignalAlertOut
+ * (GET /api/alerts/signals). These are AI (quant pattern), RISK (portfolio
+ * volatility), and NEWS (fresh headline) insights produced by the nightly
+ * generator — DISTINCT from the user-configured price/trend alerts.
+ */
+export interface SignalAlert {
+  id: number;
+  ticker: string | null;
+  alert_kind: AlertKind;
+  severity: AlertSeverity;
+  title: string;
+  detail: string;
+  as_of: string;
+  created_at: string | null;
+}
+
+/** Options for {@link fetchSignalAlerts}. */
+export interface SignalAlertsOptions {
+  kind?: AlertKind;
+  ticker?: string;
+  limit?: number;
+}
+
+/**
+ * Fetch recent system-generated alerts.
+ *
+ * Returns an empty array on 404 or ANY failure (backend down, table empty) —
+ * "no alerts yet" is a NORMAL empty state that must never fail the page.
+ */
+export async function fetchSignalAlerts(
+  opts: SignalAlertsOptions = {}
+): Promise<SignalAlert[]> {
+  const params = new URLSearchParams();
+  if (opts.kind) params.set("kind", opts.kind);
+  if (opts.ticker) params.set("ticker", opts.ticker);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  try {
+    const res = await fetch(`/api/alerts/signals${qs ? `?${qs}` : ""}`);
+    if (!res.ok) return [];
+    const body = (await res.json()) as { alerts?: SignalAlert[] };
+    return body.alerts ?? [];
+  } catch {
+    return [];
+  }
+}
