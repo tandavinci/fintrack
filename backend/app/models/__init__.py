@@ -9,6 +9,7 @@ from backend.app.models.deep_memory import DeepMemoryEntry
 from backend.app.models.education import DifficultyEnum, EducationModule, EducationProgress
 from backend.app.models.insight import InsightScore, InsightSignalEnum
 from backend.app.models.news_item import NewsItem
+from backend.app.models.pipeline_run import PipelineRun
 from backend.app.models.portfolio import Holding, Portfolio, Transaction, WatchlistItem
 from backend.app.models.price_bar import PriceBar
 from backend.app.models.recommendation import RecommendationRecord
@@ -28,6 +29,7 @@ __all__ = [
     "InsightScore",
     "InsightSignalEnum",
     "NewsItem",
+    "PipelineRun",
     "Portfolio",
     "PriceBar",
     "PriceHistory",
