@@ -207,3 +207,148 @@ export async function fetchSignalAlerts(
     return [];
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* G5 pages: Model Status, Agent Debate (deep memory), Backtest Lab           */
+/* -------------------------------------------------------------------------- */
+
+/** One route's call count in the Model Status summary. */
+export interface RouteCount {
+  route: string;
+  count: number;
+}
+
+/** The gateway call-log summary (mirrors backend CallSummary). */
+export interface CallSummary {
+  total_calls: number;
+  by_route: RouteCount[];
+  valid_count: number;
+  invalid_count: number;
+  valid_rate: number | null;
+  avg_latency_ms: number | null;
+  max_latency_ms: number | null;
+  model_id: string | null;
+}
+
+/** The full Model Status payload (mirrors backend ModelStatusResponse). */
+export interface ModelStatus {
+  ollama_up: boolean;
+  ollama_base_url: string;
+  configured_model: string;
+  num_ctx_cap: number;
+  log_path: string;
+  summary: CallSummary;
+}
+
+/**
+ * Fetch the Model Status (gateway call-log summary + Ollama liveness).
+ * Read-only. Throws ApiError on a non-ok response so the page can show it.
+ */
+export async function fetchModelStatus(): Promise<ModelStatus> {
+  const res = await fetch("/api/model/status");
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      /* non-JSON error body; keep the default message */
+    }
+    throw new ApiError(detail, res.status);
+  }
+  return (await res.json()) as ModelStatus;
+}
+
+/** One deep-memory entry (mirrors backend DeepMemoryOut). */
+export interface DeepMemoryEntry {
+  ticker: string;
+  trade_date: string;
+  rating: string | null;
+  pending: boolean;
+  raw_return: string | null;
+  alpha_return: string | null;
+  holding_days: string | null;
+  resolved_date: string | null;
+  decision: string;
+  reflection: string;
+  created_at: string | null;
+}
+
+/** The deep-memory list response (mirrors backend DeepMemoryResponse). */
+export interface DeepMemoryResponse {
+  ticker: string | null;
+  count: number;
+  entries: DeepMemoryEntry[];
+}
+
+/**
+ * Fetch recent deep-memory entries (the Agent Debate viewer's data source).
+ * When a ticker is given, uses the /{ticker} path variant; otherwise lists all.
+ * An empty table is a NORMAL state (count: 0), not an error — so any failure
+ * collapses to an empty response rather than throwing.
+ */
+export async function fetchDeepMemory(
+  ticker?: string
+): Promise<DeepMemoryResponse> {
+  const empty: DeepMemoryResponse = { ticker: ticker ?? null, count: 0, entries: [] };
+  try {
+    const path = ticker
+      ? `/api/deep/memory/${encodeURIComponent(ticker)}`
+      : "/api/deep/memory";
+    const res = await fetch(path);
+    if (!res.ok) return empty;
+    return (await res.json()) as DeepMemoryResponse;
+  } catch {
+    return empty;
+  }
+}
+
+/** One per-prediction row in a backtest report (mirrors engine to_dict()). */
+export interface BacktestResultRow {
+  prediction_date: string;
+  signal: string;
+  predicted_change: number;
+  actual_change: number;
+  direction_correct: boolean;
+  signal_profitable: boolean;
+  regime: string;
+  lesson: string;
+}
+
+/** The backtest report (mirrors the engine's BacktestReport.to_dict()). */
+export interface BacktestReport {
+  ticker: string;
+  interval: string;
+  total_predictions: number;
+  direction_accuracy: number;
+  signal_accuracy: number;
+  signal_profitability: number;
+  avg_error_pct: number;
+  total_return_pct: number;
+  sharpe_ratio: number;
+  max_drawdown_pct: number;
+  lessons_learned: string[];
+  regime_performance: Record<string, unknown>;
+  results: BacktestResultRow[];
+}
+
+/**
+ * Run a rule-based backtest for a ticker (the Backtest Lab's data source).
+ * Slow-ish (a few seconds): it pulls live prices and walks the window.
+ * Throws ApiError on a non-ok response (404 = not enough data) so the page can
+ * show the message.
+ */
+export async function fetchBacktest(ticker: string): Promise<BacktestReport> {
+  const res = await fetch(`/api/backtest/${encodeURIComponent(ticker)}`);
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      /* non-JSON error body; keep the default message */
+    }
+    throw new ApiError(detail, res.status);
+  }
+  return (await res.json()) as BacktestReport;
+}

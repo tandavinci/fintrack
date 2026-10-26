@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.app.cache import close_redis
 from backend.app.config import settings
-from backend.app.routers import alerts, auth, dashboard, deep_progress, education, fusion, insights, portfolio, quant_signal, reports, signal_alerts, stocks, websocket
+from backend.app.routers import alerts, auth, backtest, dashboard, deep_memory, deep_progress, education, fusion, insights, model_status, portfolio, quant_signal, reports, signal_alerts, stocks, websocket
 from backend.app.utils.retry import CircuitBreakerError, ErrorResponse
 
 app = FastAPI(
@@ -160,6 +160,9 @@ app.include_router(quant_signal.router)  # G3: read-only live quant signal (no D
 app.include_router(deep_progress.router)  # G4: read-only SSE deep progress (never runs the deep lane)
 app.include_router(fusion.router)  # G5: read-only recommendation fusion view (reads stored recs only)
 app.include_router(signal_alerts.router)  # G5: read-only system-generated alerts (AI/RISK/NEWS), distinct from /api/v1/alerts
+app.include_router(model_status.router)  # G5: read-only Model Status (gateway call-log summary + Ollama liveness)
+app.include_router(deep_memory.router)  # G5: read-only Agent Debate viewer (reads deep_memory table only; never runs the deep lane)
+app.include_router(backtest.router)  # G5: read-only Backtest Lab (deterministic rule-based engine, offloaded to a worker thread)
 
 
 # ---------------------------------------------------------------------------

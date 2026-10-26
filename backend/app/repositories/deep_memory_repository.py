@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -123,6 +123,33 @@ class DeepMemoryRepository:
             await self.upsert_entry(entry)
             count += 1
         return count
+
+    async def recent(
+        self, limit: int = 50, ticker: Optional[str] = None
+    ) -> list[DeepMemoryEntry]:
+        """Return recent memory entries, newest first (READ-ONLY).
+
+        Ordered by ``trade_date`` desc then ``created_at`` desc (the within-day
+        tiebreak), capped at ``limit``. When ``ticker`` is given the result is
+        filtered to that ticker. This is the Agent Debate viewer's data source;
+        it only SELECTs — it never runs the deep lane.
+        """
+        stmt = select(DeepMemoryEntry)
+        if ticker:
+            stmt = stmt.where(DeepMemoryEntry.ticker == ticker)
+        stmt = stmt.order_by(
+            DeepMemoryEntry.trade_date.desc(),
+            DeepMemoryEntry.created_at.desc(),
+        ).limit(limit)
+
+        session = self._get_session()
+        owns = self._session is None
+        try:
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+        finally:
+            if owns:
+                await session.close()
 
 
 class SyncDeepMemoryRepository:
