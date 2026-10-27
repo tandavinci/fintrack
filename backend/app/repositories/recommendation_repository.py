@@ -14,7 +14,7 @@ Session lifecycle mirrors ``price_bar_repository``: an injected session is
 reused and left open; a session the repo opens itself is closed in ``finally``.
 """
 
-from typing import Optional, Sequence
+from typing import Iterable, Optional, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -69,6 +69,38 @@ def _upsert_statement(rec: Recommendation):
     )
 
 
+def _pick_latest_per_source(
+    rows: Iterable[RecommendationRecord],
+) -> dict[str, RecommendationRecord]:
+    """Pure selection helper: keep the most-recent row for EACH source.
+
+    "Most recent" is (max ``as_of``, tiebreak max ``created_at``). Works on any
+    iterable of rows in any order (it does not assume the caller pre-ordered),
+    so it is unit-testable offline with plain objects. Returns a dict keyed by
+    source string ("quant" / "deep" / "advisor") — only sources present in
+    ``rows`` appear in the result.
+    """
+    best: dict[str, RecommendationRecord] = {}
+    for row in rows:
+        current = best.get(row.source)
+        if current is None or _recency_key(row) > _recency_key(current):
+            best[row.source] = row
+    return best
+
+
+def _recency_key(row: RecommendationRecord):
+    """Sort key for recency: (as_of, created_at). created_at may be None in
+    unit tests built from plain objects — treat None as the oldest possible."""
+    created = getattr(row, "created_at", None)
+    return (row.as_of, created if created is not None else _MIN_CREATED)
+
+
+# Sentinel "oldest" created_at for rows missing the column (offline unit rows).
+from datetime import datetime, timezone  # noqa: E402 (local, keeps top imports tidy)
+
+_MIN_CREATED = datetime.min.replace(tzinfo=timezone.utc)
+
+
 class RecommendationRepository:
     """Repository for recommendations DB access (async core + sync variants)."""
 
@@ -108,6 +140,33 @@ class RecommendationRepository:
             if owns:
                 await session.close()
 
+    async def latest_by_source(
+        self, ticker: str
+    ) -> dict[str, RecommendationRecord]:
+        """Return the most-recent row per source for ``ticker``.
+
+        Keyed by source ("quant" / "deep" / "advisor"); only sources that have a
+        stored row appear. "Most recent" is (max ``as_of``, tiebreak max
+        ``created_at``). The DB orders the rows; the per-source pick is the pure
+        :func:`_pick_latest_per_source` helper (simple + offline-testable).
+        """
+        session = self._get_session()
+        owns = self._session is None
+        try:
+            stmt = (
+                select(RecommendationRecord)
+                .where(RecommendationRecord.ticker == ticker)
+                .order_by(
+                    RecommendationRecord.as_of.desc(),
+                    RecommendationRecord.created_at.desc(),
+                )
+            )
+            result = await session.execute(stmt)
+            return _pick_latest_per_source(result.scalars().all())
+        finally:
+            if owns:
+                await session.close()
+
 
 class SyncRecommendationRepository:
     """Synchronous variant of :class:`RecommendationRepository`."""
@@ -141,6 +200,24 @@ class SyncRecommendationRepository:
                 .limit(limit)
             )
             return session.execute(stmt).scalars().all()
+        finally:
+            if owns:
+                session.close()
+
+    def latest_by_source(self, ticker: str) -> dict[str, RecommendationRecord]:
+        """Synchronous variant of :meth:`RecommendationRepository.latest_by_source`."""
+        session = self._get_session()
+        owns = self._session is None
+        try:
+            stmt = (
+                select(RecommendationRecord)
+                .where(RecommendationRecord.ticker == ticker)
+                .order_by(
+                    RecommendationRecord.as_of.desc(),
+                    RecommendationRecord.created_at.desc(),
+                )
+            )
+            return _pick_latest_per_source(session.execute(stmt).scalars().all())
         finally:
             if owns:
                 session.close()

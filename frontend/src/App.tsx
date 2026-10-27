@@ -1,82 +1,46 @@
-import { useCallback, useEffect, useState } from "react";
-import { Activity, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
-import { Info } from "lucide-react";
-import {
-  fetchSignal,
-  GOLDEN_TICKERS,
-  type SignalResponse,
-} from "@/lib/api";
-import { TickerSelect } from "@/components/ui/TickerSelect";
-import { SignalCard } from "@/components/SignalCard";
-import { RegimeBadge } from "@/components/RegimeBadge";
-import { BenchmarkCard } from "@/components/BenchmarkCard";
-import { PriceChart } from "@/components/PriceChart";
-import { EvidencePanel } from "@/components/EvidencePanel";
+import { useState } from "react";
+import { Activity, Bot, FlaskConical, LineChart, MessagesSquare, Server } from "lucide-react";
+import { GOLDEN_TICKERS } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { SignalsPage } from "@/pages/SignalsPage";
+import { ModelStatusPage } from "@/pages/ModelStatusPage";
+import { AgentDebatePage } from "@/pages/AgentDebatePage";
+import { BacktestLabPage } from "@/pages/BacktestLabPage";
+import { AdvisorPage } from "@/pages/AdvisorPage";
+
+/** The views the nav shell switches between (no router — a simple state switch). */
+type View = "signals" | "advisor" | "model" | "debate" | "backtest";
+
+const NAV: { id: View; label: string; Icon: typeof Activity }[] = [
+  { id: "signals", label: "Signals", Icon: LineChart },
+  { id: "advisor", label: "Advisor", Icon: Bot },
+  { id: "model", label: "Model Status", Icon: Server },
+  { id: "debate", label: "Agent Debate", Icon: MessagesSquare },
+  { id: "backtest", label: "Backtest Lab", Icon: FlaskConical },
+];
 
 export default function App() {
+  const [view, setView] = useState<View>("signals");
+  // Ticker lives in the shell so switching pages keeps the same symbol. The
+  // pages that need it (Signals, Agent Debate, Backtest) receive it; Model
+  // Status is global and ignores it.
   const [ticker, setTicker] = useState<string>(GOLDEN_TICKERS[0]);
-  const [data, setData] = useState<SignalResponse | null>(null);
-  const [isSample, setIsSample] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (t: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchSignal(t);
-      setData(res.data);
-      setIsSample(res.isSample);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load(ticker);
-  }, [ticker, load]);
 
   return (
     <div className="mx-auto min-h-full w-full max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
-      <Header
-        ticker={ticker}
-        onTicker={setTicker}
-        onRefresh={() => load(ticker)}
-        loading={loading}
-      />
+      <Header view={view} onView={setView} />
 
       <main className="mt-8">
-        {error && <ErrorState message={error} onRetry={() => load(ticker)} />}
-
-        {!error && loading && !data && <LoadingState ticker={ticker} />}
-
-        {!error && data && isSample && <SampleBanner />}
-
-        {!error && data && (
-          <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
-            <div className="lg:col-span-1">
-              <SignalCard rec={data.recommendation} />
-            </div>
-            <div className="lg:col-span-2">
-              <PriceChart data={data.chart} />
-            </div>
-            <div className="lg:col-span-1">
-              <RegimeBadge
-                regime={data.regime.label}
-                confidence={data.regime.confidence}
-                reasoning={data.regime.reasoning}
-              />
-            </div>
-            <div className="lg:col-span-1">
-              <BenchmarkCard benchmark={data.benchmark} />
-            </div>
-            <div className="lg:col-span-1">
-              <EvidencePanel evidence={data.recommendation.evidence} />
-            </div>
-          </div>
+        {view === "signals" && (
+          <SignalsPage ticker={ticker} onTicker={setTicker} />
+        )}
+        {view === "advisor" && <AdvisorPage />}
+        {view === "model" && <ModelStatusPage />}
+        {view === "debate" && (
+          <AgentDebatePage ticker={ticker} onTicker={setTicker} />
+        )}
+        {view === "backtest" && (
+          <BacktestLabPage ticker={ticker} onTicker={setTicker} />
         )}
       </main>
 
@@ -89,18 +53,14 @@ export default function App() {
 }
 
 function Header({
-  ticker,
-  onTicker,
-  onRefresh,
-  loading,
+  view,
+  onView,
 }: {
-  ticker: string;
-  onTicker: (t: string) => void;
-  onRefresh: () => void;
-  loading: boolean;
+  view: View;
+  onView: (v: View) => void;
 }) {
   return (
-    <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <header className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
         <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand/15 text-brand">
           <Activity className="h-6 w-6" />
@@ -109,76 +69,31 @@ function Header({
           <h1 className="text-xl font-extrabold tracking-tight text-white">
             FinTrack
           </h1>
-          <p className="text-xs text-muted">Signals &amp; Regime</p>
+          <p className="text-xs text-muted">Local trading intelligence</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <TickerSelect
-          value={ticker}
-          options={GOLDEN_TICKERS}
-          onChange={onTicker}
-          disabled={loading}
-        />
-        <button
-          onClick={onRefresh}
-          disabled={loading}
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-surface-2 text-muted transition-colors hover:text-white disabled:opacity-50"
-          title="Refresh"
-        >
-          <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-        </button>
-      </div>
+      <nav className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface-2/40 p-1">
+        {NAV.map(({ id, label, Icon }) => {
+          const active = view === id;
+          return (
+            <button
+              key={id}
+              onClick={() => onView(id)}
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                active
+                  ? "bg-brand text-white shadow-glow"
+                  : "text-muted hover:text-white"
+              )}
+              aria-current={active ? "page" : undefined}
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+            </button>
+          );
+        })}
+      </nav>
     </header>
-  );
-}
-
-function SampleBanner() {
-  return (
-    <div className="flex items-start gap-3 rounded-xl border border-hold/30 bg-hold/10 px-4 py-3 text-sm text-hold">
-      <Info className="mt-0.5 h-4 w-4 shrink-0" />
-      <p>
-        <span className="font-semibold">Preview mode — sample data.</span> The
-        live backend isn't reachable yet (it needs Postgres + Redis via Docker).
-        The dashboard below uses a fixed sample so you can see the UI. It will
-        switch to live data automatically once the backend is up.
-      </p>
-    </div>
-  );
-}
-
-function LoadingState({ ticker }: { ticker: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl2 py-24 text-muted">
-      <Loader2 className="h-8 w-8 animate-spin text-brand" />
-      <p className="text-sm">
-        Fetching live data and computing the signal for{" "}
-        <span className="font-semibold text-slate-200">{ticker}</span>…
-      </p>
-      <p className="text-xs">(pulls fresh prices from Yahoo Finance)</p>
-    </div>
-  );
-}
-
-function ErrorState({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="glass flex flex-col items-center justify-center gap-3 rounded-xl2 py-20 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-sell/15 text-sell">
-        <TriangleAlert className="h-6 w-6" />
-      </span>
-      <p className="max-w-md text-sm text-slate-300">{message}</p>
-      <button
-        onClick={onRetry}
-        className="mt-1 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-      >
-        Try again
-      </button>
-    </div>
   );
 }

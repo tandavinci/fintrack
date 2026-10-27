@@ -242,9 +242,22 @@ def test_deep_task_routes_to_deep_queue():
     assert "app.tasks.deep_recommender" in celery_app.conf.imports
 
 
-def test_deep_beat_entry_is_overnight():
+def test_deep_beat_entry_consolidated_into_nightly_pipeline():
+    """The independent deep beat entry was CONSOLIDATED into the G5 orchestrator.
+
+    Step 5 / G5 chains the nightly lanes (data -> quant -> deep -> alerts) into a
+    single sequenced ``run-nightly-pipeline`` beat entry so deep waits for quant
+    and alerts for deep. The standalone ``generate-deep-signals`` beat entry is
+    therefore REMOVED (it would otherwise double-run the deep lane), while the
+    deep TASK and its `deep`-queue route are kept for ad-hoc use (asserted by
+    ``test_deep_task_routes_to_deep_queue``). The orchestrator runs overnight on
+    the deep queue (it embeds the slow deep stage)."""
     from backend.app.celery_app import celery_app
 
-    entry = celery_app.conf.beat_schedule["generate-deep-signals"]
-    assert entry["task"] == "app.tasks.deep_recommender.generate_deep_signals"
+    schedule = celery_app.conf.beat_schedule
+    # Old independent deep entry is gone (no double-run).
+    assert "generate-deep-signals" not in schedule
+    # The deep lane now runs inside the overnight orchestrator, on the deep queue.
+    entry = schedule["run-nightly-pipeline"]
+    assert entry["task"] == "app.tasks.pipeline.run_nightly_pipeline"
     assert entry["options"] == {"queue": "deep"}

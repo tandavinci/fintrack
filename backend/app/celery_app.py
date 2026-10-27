@@ -44,6 +44,8 @@ celery_app.conf.update(
         "app.tasks.email_tasks",
         "app.tasks.quant_recommender",
         "app.tasks.deep_recommender",
+        "app.tasks.signal_alerter",
+        "app.tasks.pipeline",
     ],
 )
 
@@ -52,9 +54,17 @@ celery_app.conf.update(
 # The `deep` worker MUST run at concurrency 1 (the deep lane is slow and must not
 # be parallelized), operationally:
 #   celery -A backend.app.celery_app worker -Q deep --concurrency=1
+#
+# The G5 nightly ORCHESTRATOR (``app.tasks.pipeline.run_nightly_pipeline``) is
+# also routed to the `deep` queue: it EMBEDS the slow deep stage, so it must run
+# on the single-concurrency deep worker to keep the deep lane serialized
+# (STEERING rule 6 — the deep lane is a queued job on its own worker, never a
+# web request). Running the orchestrator on the deep worker means the deep stage
+# never contends with another deep job.
 celery_app.conf.task_routes = {
     "app.tasks.quant_recommender.*": {"queue": "quant"},
     "app.tasks.deep_recommender.*": {"queue": "deep"},
+    "app.tasks.pipeline.*": {"queue": "deep"},
 }
 
 # Celery Beat schedule
@@ -92,21 +102,24 @@ celery_app.conf.beat_schedule = {
             "expires": 3600,
         },
     },
-    # Nightly quant signals: post-market (4:30 PM IST, after 3:30 PM close), Mon-Fri.
-    # Routed to the dedicated `quant` queue (Step 3 / G3).
-    "generate-nightly-signals": {
-        "task": "app.tasks.quant_recommender.generate_nightly_signals",
-        "schedule": crontab(hour=16, minute=30, day_of_week="mon-fri"),
-        "options": {
-            "queue": "quant",
-        },
-    },
-    # Overnight deep signals: 1:00 AM IST (well after the 3:30 PM close and well
-    # before the 09:00 IST nightly-pipeline deadline / 09:15 BSE open), Tue-Sat so
-    # a run covers the prior trading day. Routed to the dedicated `deep` queue;
-    # the deep worker runs at concurrency 1 (Step 4 / G4).
-    "generate-deep-signals": {
-        "task": "app.tasks.deep_recommender.generate_deep_signals",
+    # --- G5 NIGHTLY PIPELINE (consolidated, Step 5) -----------------------
+    # Previously three INDEPENDENT beat entries ran the nightly lanes by the
+    # clock and nothing sequenced them:
+    #   generate-nightly-signals (quant) 16:30, generate-deep-signals (deep)
+    #   01:00, generate-signal-alerts 07:00.
+    # G5 wants a real CHAIN (data sync -> quant -> deep -> alerts) with one
+    # auditable completion record. So those three independent entries are
+    # CONSOLIDATED into the single orchestrated entry below. The underlying
+    # tasks and their routes are KEPT (so an operator can still fire any lane
+    # ad-hoc, e.g. ``generate_nightly_signals.delay()``); only their BEAT
+    # entries are removed so they don't DOUBLE-RUN alongside the orchestrator.
+    #
+    # Scheduled at the former deep window (01:00 IST, Tue-Sat so a run covers
+    # the prior trading day) — well after the 15:30 close and before the 09:00
+    # IST deadline / 09:15 BSE open. Routed to the `deep` queue (concurrency 1)
+    # because the orchestrator embeds the slow deep stage.
+    "run-nightly-pipeline": {
+        "task": "app.tasks.pipeline.run_nightly_pipeline",
         "schedule": crontab(hour=1, minute=0, day_of_week="tue-sat"),
         "options": {
             "queue": "deep",
