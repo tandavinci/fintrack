@@ -2,6 +2,58 @@
 
 Format per STEERING §11. Newest week on top.
 
+## Week 5 (2026-10-27) — Step 6 evaluation & hardening (Gate G6), deliverable 1
+
+Current step / gate: Step 6 started on branch `feature/g6` (off a clean, up-to-
+date `main` carrying G0–G5). Deliverable 1 of 4 — the BACKTEST GRID — is built,
+tested, and verified. Worked by Pranav with Kiro.
+
+Built:
+- `quant/backtesting/grid.py` — the backtest grid: a WEEKLY walk-forward
+  (step 5 / horizon 5 trading days) of the rule-based `quant.recommend` lane
+  over the committed golden parquet frames, scored vs the Nifty 50 (`^NSEI`)
+  benchmark with the existing pure `score_vs_benchmark` (imported, not forked).
+  Three lanes: quant, buy-and-hold (stock's own first-to-last close), and deep
+  (one optional `--deep-ticker` cell). Pure at import; all I/O in functions.
+  CLI: `python -m quant.backtesting.grid [--deep-ticker X] [--out-dir ...]`.
+- `tests/golden/benchmark/NSEI_1d.parquet` — committed Nifty benchmark fixture
+  (138 rows, 2026-04-01..2026-10-21), in a SUBDIRECTORY so the non-recursive
+  `tests/golden/*_1d.parquet` globs (which assert exactly 10 stock files) are
+  untouched. `tests/golden/benchmark/_materialize_nsei.py` records how it was
+  made (live `^NSEI` fetch succeeded; a deterministic synth fallback exists).
+- `tests/test_backtest_grid.py` — 7 offline tests (one row per golden, ratings
+  in 1..5, finite returns, and BYTE-REPRODUCIBLE CSV+MD across two runs) plus
+  one `@pytest.mark.integration` deep-wiring test that skips-with-reason when
+  Ollama/gateway is down.
+- `docs/evaluations/backtest_grid.csv` + `.md` — the grid output (regenerated
+  by the CLI; the deterministic table is byte-stable).
+
+Measured results:
+- Offline suite (`pytest -q -m "not integration"`): **180 passed, 36 deselected**
+  (was 173; +7 grid tests). ~121s wall (the gateway validity-rate test dominates).
+- Grid determinism: the CSV is byte-identical across two offline runs
+  (SHA-256 `9E9EA9B6…3E8874`). This is the G3-style reproducibility measure
+  applied to the grid.
+- Grid result (quant vs buy-and-hold, 10 goldens): MIXED and honest — the
+  rule-based quant lane beats buy-and-hold on some (CUMMINSIND +3.7% vs -23.3%,
+  YESBANK +18.1% vs -32.7%) and badly lags on others (INFY -20.3% vs +0.9%,
+  whipsawed shorting a recovering stock). Exactly the kind of result G6 exists
+  to surface; the honest vs-baseline verdict is the G6 gate decision (deferred
+  until all deliverables land).
+
+Open items / blockers:
+- **Deep lane on this hardware: not viable.** A single `--deep-ticker RELIANCE.NS`
+  run was started and ran >21 min WITHOUT returning (stuck past the news-gather
+  phase; Yahoo has no `.NS` news, same as the G4 smoke test). Stopped manually.
+  Per the stop/pivot rule, the multi-ticker (and even 1-ticker) deep backtest is
+  DEFERRED to TK's faster hardware. The deep cell is wired and flag-gated; the
+  deterministic quant/BH/benchmark grid stands on its own here.
+
+Next (top 3):
+1. Deliverable 2 — PostgreSQL backup + one-command restore + runbook.
+2. Deliverable 4 — paper-trading mechanism (table, migration, mark-to-market job).
+3. Deliverable 3 — model qualification scorecard (llama3.2 vs gemma2:9b, quick tier).
+
 ## Week 4 (2026-10-22) — Step 3 quant-core productization (Gate G3)
 
 Current step / gate: Step 3 built on branch `feature/g3` (not yet merged to
