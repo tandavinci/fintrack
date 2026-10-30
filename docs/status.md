@@ -2,6 +2,156 @@
 
 Format per STEERING §11. Newest week on top.
 
+## Week 5 (2026-10-27) — Step 6 (Gate G6), deliverables 2 + 4
+
+Continuing Step 6 on `feature/g6`. Two more deliverables landed this session.
+
+### Deliverable 2 — PostgreSQL backup + one-command restore (DONE)
+- `infra/backup-db.ps1`, `infra/restore-db.ps1`, `infra/_db-env.ps1` — run the
+  Postgres container's own `pg_dump`/`pg_restore` via `docker exec` + `docker cp`
+  (no host client install, matching server version). Restore is one command
+  (newest dump by default), destructive with a typed-`yes` guard + `-Force`.
+- `docs/runbook.md` Step 6.4 TODO replaced with real usage. `infra/backups/`
+  git-ignored.
+- VERIFIED live: real backup (121.8 KB) + real `--clean` restore round-trip;
+  after restore 21 tables, `vector`+`pg_trgm` extensions, and Alembic head all
+  preserved. Confirmation prompt blocks without `yes`.
+
+### Deliverable 4 — paper-trading mechanism (DONE, option B dual book)
+- `paper_positions` table + Alembic migration **007** (head now 007). Keyed
+  unique on `(ticker, source, opened_as_of)`; `source` column keeps a SEPARATE
+  quant and deep paper book (dual book — chosen so a capable machine can compare
+  quant vs deep vs benchmark without a schema change). Float(precision=53) money.
+- `backend/app/services/paper_trading_service.py` — pure helpers
+  (`paper_return_pct`, `decide_transition` open/mark/close rules,
+  `summarize_book` vs benchmark via the shared `score_vs_benchmark`) + the
+  DB/price orchestration (`mark_to_market_ticker`/`mark_to_market_book`) using
+  point-in-time closes.
+- `SyncPaperPositionRepository` (+ async read) following the sibling repo
+  pattern; the `mark_paper_books` Celery task (queue `quant`); wired as a new
+  `paper` stage in the nightly pipeline AFTER alerts.
+- Tests: 16 offline unit (P&L, transitions, summary) + 3 integration
+  (open/mark/close lifecycle, idempotent open, independent dual book) — all pass
+  on live Postgres. Pipeline unit tests updated for the new stage.
+- VERIFIED end-to-end on live data: a BUY opened a RELIANCE.NS paper position at
+  a real ₹1184.50 close (fixed ₹10,000 notional -> qty 8.4424); a SELL rec
+  correctly SKIPPED (open-on-BUY only).
+
+Measured results (both deliverables):
+- Offline suite: **196 passed, 0 failed**, run 3x stable (was 180 at deliverable
+  1; +16 paper unit tests).
+- Full integration suite shows the KNOWN pre-existing async-event-loop
+  contamination flakiness in the FastAPI TestClient tests (documented in
+  `tests/integration_helpers.py`) — order-dependent, NOT caused by this work;
+  the paper + backup tests pass reliably in isolation.
+
+Open items / carry-over:
+- The 4-week paper-trade RESULT is calendar time (mechanism is built + proven).
+  The DEEP paper book fills only on capable hardware (deep lane is the blocker);
+  the quant book works here now.
+- CAUGHT + REVERTED: running `test_golden_materialize` against the live stack
+  silently overwrote the 10 committed golden parquets; restored them so the
+  determinism baseline (and the deliverable-1 grid hash 9E9EA9B6…) is intact.
+  Note for TK: do NOT commit golden parquet changes from a materialize run.
+
+### Deliverable 3 — model qualification scorecard (DONE)
+- `gateway/scorecard.py` — compares local models on structured-output validity,
+  number-preservation (the "models explain, code computes" discipline,
+  measured), and latency/throughput. EVERY model call routes through
+  `gateway.client.generate_sync` (the only Ollama path); httpx is used only for
+  the `/api/tags` availability probe. Model swap is done by temporarily setting
+  `settings.GATEWAY_MODEL` (restored in finally). Pure helpers
+  (`number_in_allowed`, `parse_leading_number`, `summarize_latencies`,
+  `choose_recommended`) are offline-unit-testable; the live runners + CLI are
+  the only Ollama-touching parts. CLI: `python -m gateway.scorecard`.
+- `tests/test_model_scorecard_unit.py` — 33 offline unit tests (pure helpers +
+  writer + callable smoke); no infra.
+- RAN THE REAL FULL SCORECARD (both models, validity-n 20):
+  - llama3.2  — validity 100% (20/20), number-preservation 100% (5/5),
+    median 3468 ms, 4.3 tok/s.
+  - gemma2:9b — validity 100% (20/20), number-preservation 100% (5/5),
+    median 5620 ms, 2.7 tok/s, spills into RAM on 4 GB VRAM.
+  - RECOMMENDATION: **llama3.2** — both tie on quality (perfect), so the
+    smaller/faster model that fits VRAM wins; the bigger model does NOT earn its
+    ~62%-slower cost here. Written to `docs/evaluations/model_scorecard.{md,json}`.
+- Offline suite now **229 passed, 0 failed**, 3x stable (+33 from this deliverable).
+
+### Deliverable 5 — G6 evaluation report + decision note (DONE — GATE CLOSED)
+- `docs/evaluations/g6-evaluation.md` — the honest vs-baseline evaluation pulling
+  together all four deliverables, with the measures table (STEERING §9) and an
+  explicit "what this machine could/couldn't prove" section.
+- `docs/decisions/0008-g6-evaluation-verdict.md` — the go/fix/stop ADR.
+- `docs/PROJECT_OVERVIEW.md` — roadmap marked G0–G6 complete.
+
+**GATE G6 VERDICT: GO (with caveats).** The system is adopted as a
+decision-SUPPORT / monitoring tool, NOT a proven edge. Grounds:
+- Backtest grid (10 goldens, ~6-mo weekly walk-forward): quant mean **+0.91%**
+  vs buy-and-hold **−4.78%** / Nifty **−5.16%**; quant beat buy-and-hold **6/10**
+  and the benchmark **7/10**, but wide spread (+18.1% best, −20.3% worst). Modest
+  over one window — worth watching, not a proven edge.
+- Model scorecard: both models 100% validity + 100% number-preservation; **keep
+  llama3.2** (gemma2:9b ~62% slower, spills RAM, no quality gain on 4 GB VRAM).
+- Hardening: backup + one-command restore round-trip verified; offline suite
+  **229 passed, 0 failed** 3x stable; paid-API cost **0**.
+- Deferred to capable hardware (not failures): deep-lane multi-ticker backtest +
+  paper book, ≥4-week paper-trade result, timed "before 09:00 IST" pipeline.
+
+**G0–G6 COMPLETE.** `feature/g6` ready to merge to main.
+
+Decision notes added: 0008 (G6 evaluation verdict).
+
+## Week 5 (2026-10-27) — Step 6 evaluation & hardening (Gate G6), deliverable 1
+
+Current step / gate: Step 6 started on branch `feature/g6` (off a clean, up-to-
+date `main` carrying G0–G5). Deliverable 1 of 4 — the BACKTEST GRID — is built,
+tested, and verified. Worked by Pranav with Kiro.
+
+Built:
+- `quant/backtesting/grid.py` — the backtest grid: a WEEKLY walk-forward
+  (step 5 / horizon 5 trading days) of the rule-based `quant.recommend` lane
+  over the committed golden parquet frames, scored vs the Nifty 50 (`^NSEI`)
+  benchmark with the existing pure `score_vs_benchmark` (imported, not forked).
+  Three lanes: quant, buy-and-hold (stock's own first-to-last close), and deep
+  (one optional `--deep-ticker` cell). Pure at import; all I/O in functions.
+  CLI: `python -m quant.backtesting.grid [--deep-ticker X] [--out-dir ...]`.
+- `tests/golden/benchmark/NSEI_1d.parquet` — committed Nifty benchmark fixture
+  (138 rows, 2026-04-01..2026-10-21), in a SUBDIRECTORY so the non-recursive
+  `tests/golden/*_1d.parquet` globs (which assert exactly 10 stock files) are
+  untouched. `tests/golden/benchmark/_materialize_nsei.py` records how it was
+  made (live `^NSEI` fetch succeeded; a deterministic synth fallback exists).
+- `tests/test_backtest_grid.py` — 7 offline tests (one row per golden, ratings
+  in 1..5, finite returns, and BYTE-REPRODUCIBLE CSV+MD across two runs) plus
+  one `@pytest.mark.integration` deep-wiring test that skips-with-reason when
+  Ollama/gateway is down.
+- `docs/evaluations/backtest_grid.csv` + `.md` — the grid output (regenerated
+  by the CLI; the deterministic table is byte-stable).
+
+Measured results:
+- Offline suite (`pytest -q -m "not integration"`): **180 passed, 36 deselected**
+  (was 173; +7 grid tests). ~121s wall (the gateway validity-rate test dominates).
+- Grid determinism: the CSV is byte-identical across two offline runs
+  (SHA-256 `9E9EA9B6…3E8874`). This is the G3-style reproducibility measure
+  applied to the grid.
+- Grid result (quant vs buy-and-hold, 10 goldens): MIXED and honest — the
+  rule-based quant lane beats buy-and-hold on some (CUMMINSIND +3.7% vs -23.3%,
+  YESBANK +18.1% vs -32.7%) and badly lags on others (INFY -20.3% vs +0.9%,
+  whipsawed shorting a recovering stock). Exactly the kind of result G6 exists
+  to surface; the honest vs-baseline verdict is the G6 gate decision (deferred
+  until all deliverables land).
+
+Open items / blockers:
+- **Deep lane on this hardware: not viable.** A single `--deep-ticker RELIANCE.NS`
+  run was started and ran >21 min WITHOUT returning (stuck past the news-gather
+  phase; Yahoo has no `.NS` news, same as the G4 smoke test). Stopped manually.
+  Per the stop/pivot rule, the multi-ticker (and even 1-ticker) deep backtest is
+  DEFERRED to TK's faster hardware. The deep cell is wired and flag-gated; the
+  deterministic quant/BH/benchmark grid stands on its own here.
+
+Next (top 3):
+1. Deliverable 2 — PostgreSQL backup + one-command restore + runbook.
+2. Deliverable 4 — paper-trading mechanism (table, migration, mark-to-market job).
+3. Deliverable 3 — model qualification scorecard (llama3.2 vs gemma2:9b, quick tier).
+
 ## Week 4 (2026-10-22) — Step 3 quant-core productization (Gate G3)
 
 Current step / gate: Step 3 built on branch `feature/g3` (not yet merged to

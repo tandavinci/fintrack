@@ -6,7 +6,8 @@ A single ``@shared_task`` — ``run_nightly_pipeline`` — that chains the night
 stages into an explicit SEQUENCE and records a COMPLETION SUMMARY so we can tell
 whether the pipeline finished:
 
-    stage 0: data sync  ->  stage 1: quant  ->  stage 2: deep  ->  stage 3: alerts
+    stage 0: data sync -> stage 1: quant -> stage 2: deep -> stage 3: alerts
+    -> stage 4: paper (mark-to-market the quant + deep paper books)
 
 Before this, ``celery_app`` scheduled the quant / deep / alert tasks by
 INDEPENDENT timers (16:30 / 01:00 / 07:00); nothing guaranteed deep waited for
@@ -71,6 +72,7 @@ from celery import shared_task
 # their ``.run`` bodies synchronously, in order — never ``.delay``.
 from backend.app.repositories.pipeline_run_repository import SyncPipelineRunRepository
 from backend.app.tasks.deep_recommender import generate_deep_signals
+from backend.app.tasks.paper_trader import mark_paper_books
 from backend.app.tasks.quant_recommender import generate_nightly_signals
 from backend.app.tasks.signal_alerter import generate_signal_alerts
 
@@ -144,6 +146,12 @@ def run_nightly_pipeline(self) -> dict:
     stages_run.append("alerts")
     if not _run_stage(repo, run_date, "alerts", generate_signal_alerts.run):
         failed.append("alerts")
+
+    # Stage 4: paper-trading mark-to-market (opens/marks/closes the quant+deep
+    # paper books from the recommendations the earlier stages just stored).
+    stages_run.append("paper")
+    if not _run_stage(repo, run_date, "paper", mark_paper_books.run):
+        failed.append("paper")
 
     status = "failed" if failed else "completed"
     repo.finish(run_date, status)

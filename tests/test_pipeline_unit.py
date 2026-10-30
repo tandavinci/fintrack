@@ -79,8 +79,14 @@ def fake_repo(monkeypatch) -> _FakeRepo:
     return repo
 
 
-def _patch_stages(monkeypatch, order_log, *, quant, deep, alerts):
-    """Monkeypatch the three stage task objects on the pipeline module."""
+def _patch_stages(monkeypatch, order_log, *, quant, deep, alerts, paper=None):
+    """Monkeypatch the stage task objects on the pipeline module.
+
+    ``paper`` defaults to a successful no-op summary so the tests that only care
+    about the quant/deep/alerts behaviour don't have to spell it out; it is
+    patched regardless so the real (DB-touching) ``mark_paper_books`` never runs.
+    """
+    paper = paper or {"summary": {"opened": 0, "marked": 0, "closed": 0}}
     monkeypatch.setattr(
         pipeline_mod, "generate_nightly_signals",
         _FakeTask("quant", order_log, summary=quant.get("summary"), exc=quant.get("exc")),
@@ -92,6 +98,10 @@ def _patch_stages(monkeypatch, order_log, *, quant, deep, alerts):
     monkeypatch.setattr(
         pipeline_mod, "generate_signal_alerts",
         _FakeTask("alerts", order_log, summary=alerts.get("summary"), exc=alerts.get("exc")),
+    )
+    monkeypatch.setattr(
+        pipeline_mod, "mark_paper_books",
+        _FakeTask("paper", order_log, summary=paper.get("summary"), exc=paper.get("exc")),
     )
 
 
@@ -112,7 +122,7 @@ def test_happy_path_runs_in_order_records_all_and_completes(
     result = pipeline_mod.run_nightly_pipeline.run()
 
     # Stages ran IN ORDER (the fakes logged themselves as they ran).
-    assert order_log == ["quant", "deep", "alerts"]
+    assert order_log == ["quant", "deep", "alerts", "paper"]
 
     # start() called once, finish() marked "completed".
     assert len(fake_repo.started) == 1
@@ -120,16 +130,17 @@ def test_happy_path_runs_in_order_records_all_and_completes(
 
     # Every stage summary recorded, including the stage-0 data marker, in order.
     recorded_names = [name for name, _ in fake_repo.recorded]
-    assert recorded_names == ["data", "quant", "deep", "alerts"]
+    assert recorded_names == ["data", "quant", "deep", "alerts", "paper"]
     recorded = dict(fake_repo.recorded)
     assert recorded["data"] == {"note": "lanes fetch their own data"}
     assert recorded["quant"] == {"processed": 12, "errors": 0}
     assert recorded["deep"] == {"processed": 5, "errors": 0, "total": 5}
     assert recorded["alerts"] == {"ai": 7, "risk": 0, "news": 0, "inserted": 7}
+    assert recorded["paper"] == {"opened": 0, "marked": 0, "closed": 0}
 
     # Returned summary.
     assert result["status"] == "completed"
-    assert result["stages_run"] == ["data", "quant", "deep", "alerts"]
+    assert result["stages_run"] == ["data", "quant", "deep", "alerts", "paper"]
     assert result["failed_stages"] == []
 
 
@@ -150,8 +161,8 @@ def test_raising_deep_stage_is_captured_later_stages_still_run_status_failed(
 
     result = pipeline_mod.run_nightly_pipeline.run()
 
-    # Order preserved AND the later (alerts) stage STILL ran despite deep failing.
-    assert order_log == ["quant", "deep", "alerts"]
+    # Order preserved AND the later stages STILL ran despite deep failing.
+    assert order_log == ["quant", "deep", "alerts", "paper"]
 
     recorded = dict(fake_repo.recorded)
     # The failing stage is captured as an error entry...
@@ -160,11 +171,11 @@ def test_raising_deep_stage_is_captured_later_stages_still_run_status_failed(
     assert recorded["quant"] == {"processed": 3, "errors": 0}
     assert recorded["alerts"] == {"ai": 2, "inserted": 2}
 
-    # Final status is "failed" (continue-but-mark-failed), but alerts still ran.
+    # Final status is "failed" (continue-but-mark-failed), but later stages ran.
     assert fake_repo.finished == [(fake_repo.started[0], "failed")]
     assert result["status"] == "failed"
     assert result["failed_stages"] == ["deep"]
-    assert result["stages_run"] == ["data", "quant", "deep", "alerts"]
+    assert result["stages_run"] == ["data", "quant", "deep", "alerts", "paper"]
 
 
 def test_all_stages_run_even_if_quant_fails_first(monkeypatch, order_log, fake_repo):
@@ -179,7 +190,7 @@ def test_all_stages_run_even_if_quant_fails_first(monkeypatch, order_log, fake_r
 
     result = pipeline_mod.run_nightly_pipeline.run()
 
-    assert order_log == ["quant", "deep", "alerts"]
+    assert order_log == ["quant", "deep", "alerts", "paper"]
     recorded = dict(fake_repo.recorded)
     assert recorded["quant"] == {"error": "quant boom"}
     assert recorded["deep"] == {"processed": 1, "total": 1}

@@ -23,6 +23,9 @@ dist/
 *.log
 .DS_Store
 
+# DB backup dumps (local-only, can be large) — the backup/restore SCRIPTS are tracked
+infra/backups/
+
 # OS / editor
 Thumbs.db
 .idea/

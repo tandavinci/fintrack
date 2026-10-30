@@ -45,6 +45,7 @@ celery_app.conf.update(
         "app.tasks.quant_recommender",
         "app.tasks.deep_recommender",
         "app.tasks.signal_alerter",
+        "app.tasks.paper_trader",
         "app.tasks.pipeline",
     ],
 )
@@ -64,6 +65,9 @@ celery_app.conf.update(
 celery_app.conf.task_routes = {
     "app.tasks.quant_recommender.*": {"queue": "quant"},
     "app.tasks.deep_recommender.*": {"queue": "deep"},
+    # Paper mark-to-market is a fast, DB-only post-market lane (reads stored recs
+    # + point-in-time closes), so it rides the same `quant` fast-lane queue.
+    "app.tasks.paper_trader.*": {"queue": "quant"},
     "app.tasks.pipeline.*": {"queue": "deep"},
 }
 

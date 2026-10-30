@@ -51,7 +51,19 @@ As of the latest push to `https://github.com/tandavinci/fintrack` (branch `main`
 
 ---
 
-## 3. What's left (the roadmap)
+## 3. The roadmap (G0–G6 COMPLETE)
+
+**Update (2026-10-27): all gates G0–G6 are done.** Steps 3–6 (quant core, deep
+engine, product unification, evaluation & hardening) have been built and merged.
+Gate G6 closed **GO (with caveats)** — the quant lane modestly beat the
+buy-and-hold baseline over the tested window, the system is adopted as a
+decision-SUPPORT and monitoring tool (not a proven edge), and llama3.2 is kept
+over gemma2:9b on the 4 GB-VRAM machine. See `docs/evaluations/g6-evaluation.md`
+and `docs/decisions/0008-g6-evaluation-verdict.md`. Deferred to capable hardware:
+the deep lane's multi-ticker backtest/paper book, a ≥4-week paper-trade result,
+and the timed nightly-pipeline guarantee.
+
+The original step/gate table (kept for reference):
 
 | Step | What it adds | Gate |
 | --- | --- | --- |
