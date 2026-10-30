@@ -102,9 +102,47 @@ ollama list
 ollama pull qwen2.5:7b-instruct-q4_K_M   # 8B-class 4-bit candidate (Step 0.5)
 ```
 
-## Backups / restore (built in Step 6)
+## Backups / restore (Step 6.4)
 
-- PostgreSQL backup + one-command restore — TODO Step 6.4.
+Two PowerShell scripts in `infra/` back up and restore the Postgres database.
+They run the Postgres container's OWN `pg_dump` / `pg_restore` via `docker exec`
++ `docker cp`, so **no host PostgreSQL client install is needed** and the dump is
+always produced/consumed by the matching server version
+(`pgvector/pgvector:pg16`). The Docker stack must be up (same as for running the
+app). Connection settings come from `infra/.env` when present, else the
+docker-compose defaults (user/db `fintrack`); the container is auto-detected
+(compose default `fintech-infra-postgres-1`, with a label-based fallback).
+
+Backup (writes a timestamped custom-format dump to `infra/backups/`):
+
+```powershell
+.\infra\backup-db.ps1
+# or choose a location:
+.\infra\backup-db.ps1 -OutDir D:\backups
+```
+
+Restore — ONE command (restores the newest `infra/backups/*.dump` by default):
+
+```powershell
+.\infra\restore-db.ps1
+```
+
+Restore is DESTRUCTIVE: it uses `pg_restore --clean --if-exists`, which DROPS and
+recreates objects, overwriting current data. The script asks for a typed `yes`
+confirmation first. Skip the prompt for scripted restores with `-Force`, and/or
+point at a specific dump with `-InFile`:
+
+```powershell
+.\infra\restore-db.ps1 -InFile infra\backups\fintrack-20261027-120000.dump -Force
+```
+
+Notes:
+- The dump includes the `vector` (pgvector) extension's table data like any
+  other data; the extension itself is recreated by the Alembic migrations on a
+  fresh DB, or by the dump on an existing one.
+- `infra/backups/` is git-ignored (dumps can be large and are local-only).
+- Verify a restore with, e.g.:
+  `docker exec fintech-infra-postgres-1 psql -U fintrack -d fintrack -c "\dt"`.
 
 ## Gate checklist pointer
 
