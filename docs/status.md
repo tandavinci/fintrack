@@ -2,6 +2,62 @@
 
 Format per STEERING §11. Newest week on top.
 
+## Week 5 (2026-10-27) — Step 6 (Gate G6), deliverables 2 + 4
+
+Continuing Step 6 on `feature/g6`. Two more deliverables landed this session.
+
+### Deliverable 2 — PostgreSQL backup + one-command restore (DONE)
+- `infra/backup-db.ps1`, `infra/restore-db.ps1`, `infra/_db-env.ps1` — run the
+  Postgres container's own `pg_dump`/`pg_restore` via `docker exec` + `docker cp`
+  (no host client install, matching server version). Restore is one command
+  (newest dump by default), destructive with a typed-`yes` guard + `-Force`.
+- `docs/runbook.md` Step 6.4 TODO replaced with real usage. `infra/backups/`
+  git-ignored.
+- VERIFIED live: real backup (121.8 KB) + real `--clean` restore round-trip;
+  after restore 21 tables, `vector`+`pg_trgm` extensions, and Alembic head all
+  preserved. Confirmation prompt blocks without `yes`.
+
+### Deliverable 4 — paper-trading mechanism (DONE, option B dual book)
+- `paper_positions` table + Alembic migration **007** (head now 007). Keyed
+  unique on `(ticker, source, opened_as_of)`; `source` column keeps a SEPARATE
+  quant and deep paper book (dual book — chosen so a capable machine can compare
+  quant vs deep vs benchmark without a schema change). Float(precision=53) money.
+- `backend/app/services/paper_trading_service.py` — pure helpers
+  (`paper_return_pct`, `decide_transition` open/mark/close rules,
+  `summarize_book` vs benchmark via the shared `score_vs_benchmark`) + the
+  DB/price orchestration (`mark_to_market_ticker`/`mark_to_market_book`) using
+  point-in-time closes.
+- `SyncPaperPositionRepository` (+ async read) following the sibling repo
+  pattern; the `mark_paper_books` Celery task (queue `quant`); wired as a new
+  `paper` stage in the nightly pipeline AFTER alerts.
+- Tests: 16 offline unit (P&L, transitions, summary) + 3 integration
+  (open/mark/close lifecycle, idempotent open, independent dual book) — all pass
+  on live Postgres. Pipeline unit tests updated for the new stage.
+- VERIFIED end-to-end on live data: a BUY opened a RELIANCE.NS paper position at
+  a real ₹1184.50 close (fixed ₹10,000 notional -> qty 8.4424); a SELL rec
+  correctly SKIPPED (open-on-BUY only).
+
+Measured results (both deliverables):
+- Offline suite: **196 passed, 0 failed**, run 3x stable (was 180 at deliverable
+  1; +16 paper unit tests).
+- Full integration suite shows the KNOWN pre-existing async-event-loop
+  contamination flakiness in the FastAPI TestClient tests (documented in
+  `tests/integration_helpers.py`) — order-dependent, NOT caused by this work;
+  the paper + backup tests pass reliably in isolation.
+
+Open items / carry-over:
+- The 4-week paper-trade RESULT is calendar time (mechanism is built + proven).
+  The DEEP paper book fills only on capable hardware (deep lane is the blocker);
+  the quant book works here now.
+- CAUGHT + REVERTED: running `test_golden_materialize` against the live stack
+  silently overwrote the 10 committed golden parquets; restored them so the
+  determinism baseline (and the deliverable-1 grid hash 9E9EA9B6…) is intact.
+  Note for TK: do NOT commit golden parquet changes from a materialize run.
+
+Next (top 2):
+1. Deliverable 3 — model qualification scorecard (llama3.2 vs gemma2:9b).
+2. Deliverable 5 — G6 evaluation report + decision note (closes the gate).
+
 ## Week 5 (2026-10-27) — Step 6 evaluation & hardening (Gate G6), deliverable 1
 
 Current step / gate: Step 6 started on branch `feature/g6` (off a clean, up-to-
