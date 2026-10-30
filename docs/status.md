@@ -54,9 +54,30 @@ Open items / carry-over:
   determinism baseline (and the deliverable-1 grid hash 9E9EA9B6…) is intact.
   Note for TK: do NOT commit golden parquet changes from a materialize run.
 
-Next (top 2):
-1. Deliverable 3 — model qualification scorecard (llama3.2 vs gemma2:9b).
-2. Deliverable 5 — G6 evaluation report + decision note (closes the gate).
+### Deliverable 3 — model qualification scorecard (DONE)
+- `gateway/scorecard.py` — compares local models on structured-output validity,
+  number-preservation (the "models explain, code computes" discipline,
+  measured), and latency/throughput. EVERY model call routes through
+  `gateway.client.generate_sync` (the only Ollama path); httpx is used only for
+  the `/api/tags` availability probe. Model swap is done by temporarily setting
+  `settings.GATEWAY_MODEL` (restored in finally). Pure helpers
+  (`number_in_allowed`, `parse_leading_number`, `summarize_latencies`,
+  `choose_recommended`) are offline-unit-testable; the live runners + CLI are
+  the only Ollama-touching parts. CLI: `python -m gateway.scorecard`.
+- `tests/test_model_scorecard_unit.py` — 33 offline unit tests (pure helpers +
+  writer + callable smoke); no infra.
+- RAN THE REAL FULL SCORECARD (both models, validity-n 20):
+  - llama3.2  — validity 100% (20/20), number-preservation 100% (5/5),
+    median 3468 ms, 4.3 tok/s.
+  - gemma2:9b — validity 100% (20/20), number-preservation 100% (5/5),
+    median 5620 ms, 2.7 tok/s, spills into RAM on 4 GB VRAM.
+  - RECOMMENDATION: **llama3.2** — both tie on quality (perfect), so the
+    smaller/faster model that fits VRAM wins; the bigger model does NOT earn its
+    ~62%-slower cost here. Written to `docs/evaluations/model_scorecard.{md,json}`.
+- Offline suite now **229 passed, 0 failed**, 3x stable (+33 from this deliverable).
+
+Next (top 1):
+1. Deliverable 5 — G6 evaluation report + decision note (closes the gate).
 
 ## Week 5 (2026-10-27) — Step 6 evaluation & hardening (Gate G6), deliverable 1
 

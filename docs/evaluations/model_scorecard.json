@@ -1,0 +1,38 @@
+{
+  "scores": [
+    {
+      "model": "llama3.2",
+      "validity_total": 20,
+      "validity_valid": 20,
+      "validity_rate": 1.0,
+      "number_total": 5,
+      "number_preserved": 5,
+      "number_preserved_rate": 1.0,
+      "latency_count": 20,
+      "latency_ms_mean": 3466.6,
+      "latency_ms_median": 3468.0,
+      "tokens_per_sec_mean": 4.33,
+      "error_count": 0,
+      "skipped": false,
+      "note": null
+    },
+    {
+      "model": "gemma2:9b",
+      "validity_total": 20,
+      "validity_valid": 20,
+      "validity_rate": 1.0,
+      "number_total": 5,
+      "number_preserved": 5,
+      "number_preserved_rate": 1.0,
+      "latency_count": 20,
+      "latency_ms_mean": 6902.1,
+      "latency_ms_median": 5619.5,
+      "tokens_per_sec_mean": 2.73,
+      "error_count": 0,
+      "skipped": false,
+      "note": "spills into RAM on 4 GB VRAM"
+    }
+  ],
+  "recommended_model": "llama3.2",
+  "recommendation_reason": "llama3.2 passed the validity bar (validity 100.0%, number-preservation 100.0%), matched or beat the alternatives on number-preservation, and is fastest among them (median latency 3468 ms), which also fits the 4 GB VRAM budget."
+}
