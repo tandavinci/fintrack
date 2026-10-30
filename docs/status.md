@@ -76,8 +76,29 @@ Open items / carry-over:
     ~62%-slower cost here. Written to `docs/evaluations/model_scorecard.{md,json}`.
 - Offline suite now **229 passed, 0 failed**, 3x stable (+33 from this deliverable).
 
-Next (top 1):
-1. Deliverable 5 — G6 evaluation report + decision note (closes the gate).
+### Deliverable 5 — G6 evaluation report + decision note (DONE — GATE CLOSED)
+- `docs/evaluations/g6-evaluation.md` — the honest vs-baseline evaluation pulling
+  together all four deliverables, with the measures table (STEERING §9) and an
+  explicit "what this machine could/couldn't prove" section.
+- `docs/decisions/0008-g6-evaluation-verdict.md` — the go/fix/stop ADR.
+- `docs/PROJECT_OVERVIEW.md` — roadmap marked G0–G6 complete.
+
+**GATE G6 VERDICT: GO (with caveats).** The system is adopted as a
+decision-SUPPORT / monitoring tool, NOT a proven edge. Grounds:
+- Backtest grid (10 goldens, ~6-mo weekly walk-forward): quant mean **+0.91%**
+  vs buy-and-hold **−4.78%** / Nifty **−5.16%**; quant beat buy-and-hold **6/10**
+  and the benchmark **7/10**, but wide spread (+18.1% best, −20.3% worst). Modest
+  over one window — worth watching, not a proven edge.
+- Model scorecard: both models 100% validity + 100% number-preservation; **keep
+  llama3.2** (gemma2:9b ~62% slower, spills RAM, no quality gain on 4 GB VRAM).
+- Hardening: backup + one-command restore round-trip verified; offline suite
+  **229 passed, 0 failed** 3x stable; paid-API cost **0**.
+- Deferred to capable hardware (not failures): deep-lane multi-ticker backtest +
+  paper book, ≥4-week paper-trade result, timed "before 09:00 IST" pipeline.
+
+**G0–G6 COMPLETE.** `feature/g6` ready to merge to main.
+
+Decision notes added: 0008 (G6 evaluation verdict).
 
 ## Week 5 (2026-10-27) — Step 6 evaluation & hardening (Gate G6), deliverable 1
 
